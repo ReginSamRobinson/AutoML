@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: resource_aware_automl
+Version: 0.1.0
+Summary: Resource-aware, constraint-driven AutoML framework for tabular data.
+Author: AutoML Team
+Requires-Python: >=3.9
+Requires-Dist: numpy>=1.22
+Requires-Dist: pandas>=1.5
+Requires-Dist: scikit-learn>=1.2
+Requires-Dist: xgboost>=1.7
+Requires-Dist: psutil>=5.9
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: black>=23.0; extra == "dev"
+Requires-Dist: mypy>=1.5; extra == "dev"
