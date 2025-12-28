@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "resource-aware-automl"
+version = "0.1.0"
+description = "Resource-aware, constraint-driven AutoML framework with UI dashboard"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "AutoML Contributors" }
+]
+
+dependencies = [
+    "numpy>=1.22",
+    "pandas>=1.5",
+    "scikit-learn>=1.2",
+    "xgboost>=1.7",
+    "psutil>=5.9",
+    "flask>=2.3.0",
+    "plotly>=5.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "black>=23.0",
+    "mypy>=1.5",
+]
+
+[project.urls]
+Repository = "https://github.com/user/automl"

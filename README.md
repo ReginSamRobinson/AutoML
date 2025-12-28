@@ -66,6 +66,47 @@ for entry in result.leaderboard:
 	print(entry)
 ```
 
+## Dashboard & Visualization
+
+The AutoML framework includes an interactive web-based dashboard for visualizing results.
+
+### Features
+- **Model Rankings**: Bar chart showing all models ranked by combined score
+- **Metric Comparison**: Performance visualization for the primary metric across models
+- **Resource Usage**: Training time and peak RAM consumption charts
+- **Full Leaderboard**: Detailed table with all metrics and resource metrics
+- **Best Model Summary**: Highlighted best model with key statistics
+
+### Using the Dashboard
+
+The example script automatically launches the dashboard after completing the AutoML run:
+
+```bash
+python examples/run_example.py
+```
+
+Then open your browser to **http://127.0.0.1:5000** to view the results.
+
+### Programmatic Usage
+
+```python
+from automl import run_dashboard, AutoMLEngine, ...
+
+# ... run AutoML engine ...
+result = engine.run(X, y, constraints=constraints, metrics=metrics)
+
+# Launch dashboard
+run_dashboard(result, host="127.0.0.1", port=5000, debug=False)
+```
+
+### API Endpoints
+
+- `GET /` - Main dashboard page with embedded charts
+- `GET /api/leaderboard` - JSON array of leaderboard entries
+- `GET /api/charts/leaderboard` - Plotly JSON for rankings chart
+- `GET /api/charts/metrics` - Plotly JSON for metrics chart
+- `GET /api/charts/resources` - Plotly JSON for resource usage chart
+
 For a full runnable example, execute:
 
 ```bash
