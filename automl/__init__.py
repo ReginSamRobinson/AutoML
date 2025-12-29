@@ -8,7 +8,8 @@ from .constraint import ConstraintValidator
 from .evaluation import Evaluator
 from .resource_monitor import ResourceMonitor
 from .visualizer import ResultVisualizer
-from .dashboard import create_app, run_dashboard
+from .dashboard import create_app, run_dashboard, run_dashboard_app
+from .qt_dashboard import run_dashboard_qt
 from .exporter import export_to_html
 
 __all__ = [
@@ -23,5 +24,7 @@ __all__ = [
 	"ResultVisualizer",
 	"create_app",
 	"run_dashboard",
+	"run_dashboard_app",
+	"run_dashboard_qt",
 	"export_to_html",
 ]

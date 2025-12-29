@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Resource-aware, constraint-driven AutoML framework with UI dashboard"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = "MIT"
 authors = [
     { name = "AutoML Contributors" }
 ]
@@ -21,7 +21,13 @@ dependencies = [
     "psutil>=5.9",
     "flask>=2.3.0",
     "plotly>=5.0.0",
+    "pywebview>=4.4",
+    "PySide6>=6.6",
 ]
+
+[tool.setuptools.packages.find]
+include = ["automl*"]
+exclude = ["node_modules*", "tests*", "__pycache__*"]
 
 [project.optional-dependencies]
 dev = [

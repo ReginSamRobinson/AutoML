@@ -14,7 +14,7 @@ from automl import (
     ModelRegistry,
     ResourceConstraints,
     ResourceMonitor,
-    run_dashboard,
+    run_dashboard_qt,
     export_to_html,
 )
 
@@ -94,7 +94,8 @@ def main() -> None:
     # Export HTML report
     export_to_html(result, "automl_report.html")
     
-    run_dashboard(result, host="127.0.0.1", port=5000, debug=False)
+    # Launch as a native Qt window with the existing dashboard HTML.
+    run_dashboard_qt(result)
 
 
 if __name__ == "__main__":
