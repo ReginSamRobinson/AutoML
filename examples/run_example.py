@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 import pandas as pd
 from sklearn.datasets import load_breast_cancer
 
@@ -13,7 +14,12 @@ from automl import (
     ModelRegistry,
     ResourceConstraints,
     ResourceMonitor,
+    run_dashboard_qt,
+    export_to_html,
 )
+
+# Suppress sklearn deprecation warnings
+warnings.filterwarnings('ignore', category=FutureWarning)
 
 
 def main() -> None:
@@ -37,9 +43,9 @@ def main() -> None:
     )
 
     constraints = ResourceConstraints(
-        max_training_time=60.0,
+        max_training_time=30.0,
         max_ram_mb=2048.0,
-        min_performance=0.90,
+        min_performance=0.85,
         interpretability_required=False,
         preferred_metrics=["accuracy"],
     )
@@ -79,6 +85,17 @@ def main() -> None:
                 f"{metrics_display} | Time={entry.result.resource_usage.training_time:.2f}s | "
                 f"RAM={entry.result.resource_usage.peak_ram_mb:.1f}MB | Violations={violations_summary}"
             )
+
+    # Launch the dashboard
+    print("\n" + "="*60)
+    print("🚀 Launching AutoML Results Dashboard...")
+    print("="*60)
+    
+    # Export HTML report
+    export_to_html(result, "automl_report.html")
+    
+    # Launch as a native Qt window with the existing dashboard HTML.
+    run_dashboard_qt(result)
 
 
 if __name__ == "__main__":
