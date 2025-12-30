@@ -6,15 +6,18 @@ import html
 import math
 import threading
 from typing import Optional
+from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request, render_template_string
 from plotly.subplots import make_subplots
 from werkzeug.serving import make_server
+from werkzeug.utils import secure_filename
 
 from .engine import AutoMLResult
 from .visualizer import ResultVisualizer
+from .data_upload import allowed_file, load_dataset, get_dataset_preview, validate_dataset, create_upload_folder, ALLOWED_EXTENSIONS
 
 
 def create_app(result: Optional[AutoMLResult] = None) -> Flask:
@@ -391,6 +394,122 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
             fig.update_layout(annotations=annotations)
 
         return fig.to_json()
+
+    # Dataset upload endpoints
+    upload_folder = create_upload_folder()
+    app.config['UPLOAD_FOLDER'] = upload_folder
+    app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB
+
+    @app.route("/api/upload", methods=['POST'])
+    def upload_dataset():
+        """Handle dataset file upload."""
+        try:
+            if 'file' not in request.files:
+                return jsonify({'error': 'No file provided'}), 400
+            
+            file = request.files['file']
+            if file.filename == '':
+                return jsonify({'error': 'No file selected'}), 400
+            
+            if not allowed_file(file.filename):
+                return jsonify({'error': f'File type not allowed. Allowed: {", ".join(ALLOWED_EXTENSIONS)}'}), 400
+            
+            # Save file
+            filename = secure_filename(file.filename)
+            filepath = Path(app.config['UPLOAD_FOLDER']) / filename
+            file.save(str(filepath))
+            
+            # Load and validate dataset
+            df, load_error = load_dataset(str(filepath))
+            if load_error:
+                filepath.unlink()
+                return jsonify({'error': load_error}), 400
+            
+            is_valid, validation_error = validate_dataset(df)
+            if not is_valid:
+                filepath.unlink()
+                return jsonify({'error': validation_error}), 400
+            
+            # Get preview
+            preview = get_dataset_preview(df)
+            
+            return jsonify({
+                'success': True,
+                'filename': filename,
+                'filepath': str(filepath),
+                'preview': preview,
+                'message': f'Successfully uploaded dataset with shape {df.shape[0]} rows × {df.shape[1]} columns'
+            }), 200
+        
+        except Exception as e:
+            return jsonify({'error': f'Upload failed: {str(e)}'}), 500
+
+    @app.route("/api/datasets", methods=['GET'])
+    def list_datasets():
+        """List available uploaded datasets."""
+        try:
+            upload_dir = Path(app.config['UPLOAD_FOLDER'])
+            datasets = []
+            
+            if upload_dir.exists():
+                for file_path in upload_dir.iterdir():
+                    if file_path.is_file() and allowed_file(file_path.name):
+                        try:
+                            stat = file_path.stat()
+                            datasets.append({
+                                'name': file_path.name,
+                                'size': stat.st_size,
+                                'modified': stat.st_mtime,
+                                'path': str(file_path)
+                            })
+                        except Exception:
+                            continue
+            
+            return jsonify({'datasets': sorted(datasets, key=lambda x: x['modified'], reverse=True)}), 200
+        
+        except Exception as e:
+            return jsonify({'error': f'Failed to list datasets: {str(e)}'}), 500
+
+    @app.route("/api/datasets/<filename>", methods=['GET'])
+    def get_dataset_info(filename: str):
+        """Get detailed information about a specific dataset."""
+        try:
+            filename = secure_filename(filename)
+            filepath = Path(app.config['UPLOAD_FOLDER']) / filename
+            
+            if not filepath.exists():
+                return jsonify({'error': 'Dataset not found'}), 404
+            
+            df, load_error = load_dataset(str(filepath))
+            if load_error:
+                return jsonify({'error': load_error}), 400
+            
+            preview = get_dataset_preview(df, rows=10)
+            
+            return jsonify({
+                'name': filename,
+                'size': filepath.stat().st_size,
+                'preview': preview
+            }), 200
+        
+        except Exception as e:
+            return jsonify({'error': f'Failed to get dataset info: {str(e)}'}), 500
+
+    @app.route("/api/datasets/<filename>", methods=['DELETE'])
+    def delete_dataset(filename: str):
+        """Delete an uploaded dataset."""
+        try:
+            filename = secure_filename(filename)
+            filepath = Path(app.config['UPLOAD_FOLDER']) / filename
+            
+            if not filepath.exists():
+                return jsonify({'error': 'Dataset not found'}), 404
+            
+            filepath.unlink()
+            return jsonify({'success': True, 'message': f'Dataset {filename} deleted'}), 200
+        
+        except Exception as e:
+            return jsonify({'error': f'Failed to delete dataset: {str(e)}'}), 500
 
     return app
 
@@ -1497,6 +1616,95 @@ def _build_html_dashboard(
                 color: var(--text-muted);
                 font-size: 0.85rem;
             }
+            .navbar-upload-btn {
+                background: rgba(95, 227, 192, 0.15);
+                border: 1px solid rgba(95, 227, 192, 0.4);
+                color: var(--accent);
+                padding: 8px 16px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 0.9rem;
+                transition: all 0.2s ease;
+                font-weight: 600;
+            }
+            .navbar-upload-btn:hover {
+                background: rgba(95, 227, 192, 0.25);
+                border-color: var(--accent);
+            }
+            .modal {
+                display: none;
+                position: fixed;
+                z-index: 1000;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.8);
+            }
+            .modal-content {
+                background-color: var(--panel);
+                margin: 5% auto;
+                padding: 30px;
+                border-radius: 12px;
+                border: 1px solid var(--border);
+                width: 90%;
+                max-width: 500px;
+            }
+            .modal-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 20px;
+            }
+            .modal-title {
+                font-size: 1.3rem;
+                font-weight: 700;
+            }
+            .close {
+                color: var(--text-muted);
+                font-size: 28px;
+                font-weight: bold;
+                cursor: pointer;
+                transition: color 0.2s;
+            }
+            .close:hover {
+                color: var(--text);
+            }
+            .upload-area {
+                border: 2px dashed var(--border);
+                border-radius: 8px;
+                padding: 40px 20px;
+                text-align: center;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .upload-area:hover {
+                border-color: var(--accent);
+                background: rgba(95, 227, 192, 0.05);
+            }
+            .upload-area.dragover {
+                border-color: var(--accent);
+                background: rgba(95, 227, 192, 0.1);
+            }
+            #fileInput {
+                display: none;
+            }
+            .upload-message {
+                margin-top: 15px;
+                padding: 12px;
+                border-radius: 6px;
+                font-size: 0.9rem;
+            }
+            .upload-message.success {
+                background: rgba(52, 211, 153, 0.15);
+                color: #34d399;
+                border: 1px solid rgba(52, 211, 153, 0.3);
+            }
+            .upload-message.error {
+                background: rgba(248, 113, 113, 0.15);
+                color: #f87171;
+                border: 1px solid rgba(248, 113, 113, 0.3);
+            }
             @media (max-width: 960px) {
                 .hero-section {
                     padding: 28px;
@@ -1508,8 +1716,109 @@ def _build_html_dashboard(
         <div class=\"container\">
             <div class=\"navbar\">
                 <div class=\"navbar-brand\"><i class=\"fas fa-robot\"></i> AutoML Decision Hub</div>
-                <div class=\"navbar-context\">Resource-aware AutoML · Production Readiness Lens</div>
+                <div style=\"display: flex; gap: 20px; align-items: center;\">
+                    <div class=\"navbar-context\">Resource-aware AutoML · Production Readiness Lens</div>
+                    <button class=\"navbar-upload-btn\" onclick=\"openUploadModal()\" style=\"cursor: pointer;\">Upload Dataset</button>
+                </div>
             </div>
+            
+            <!-- Upload Modal -->
+            <div id=\"uploadModal\" class=\"modal\">
+                <div class=\"modal-content\">
+                    <div class=\"modal-header\">
+                        <div class=\"modal-title\">Upload Dataset</div>
+                        <span class=\"close\" onclick=\"closeUploadModal()\" style=\"cursor: pointer;\">&times;</span>
+                    </div>
+                    <div class=\"upload-area\" id=\"uploadArea\" onclick=\"document.getElementById('fileInput').click()\" style=\"cursor: pointer;\">
+                        <div style=\"font-size: 3rem; margin-bottom: 10px;\">📁</div>
+                        <div style=\"font-size: 1rem; margin-bottom: 5px; font-weight: 600;\">Drag and drop your file here</div>
+                        <div style=\"color: var(--text-muted); font-size: 0.85rem;\">or click to browse</div>
+                        <div style=\"color: var(--text-muted); font-size: 0.8rem; margin-top: 10px;\">Supported: CSV, Excel, JSON, Parquet</div>
+                    </div>
+                    <input type=\"file\" id=\"fileInput\" onchange=\"handleFileSelect(event)\" accept=\".csv,.xlsx,.xls,.json,.parquet\">
+                    <div id=\"uploadMessage\"></div>
+                </div>
+            </div>
+            
+            <script>
+                // Ensure modal functions are in global scope
+                window.openUploadModal = function() {
+                    var modal = document.getElementById('uploadModal');
+                    if (modal) {
+                        modal.style.display = 'block';
+                        console.log('Modal opened');
+                    }
+                }
+                
+                window.closeUploadModal = function() {
+                    var modal = document.getElementById('uploadModal');
+                    if (modal) {
+                        modal.style.display = 'none';
+                        document.getElementById('uploadMessage').innerHTML = '';
+                        document.getElementById('fileInput').value = '';
+                    }
+                }
+                
+                window.onclick = function(event) {
+                    var modal = document.getElementById('uploadModal');
+                    if (event.target == modal) {
+                        modal.style.display = 'none';
+                    }
+                }
+                
+                var uploadArea = document.getElementById('uploadArea');
+                if (uploadArea) {
+                    uploadArea.addEventListener('dragover', function(e) {
+                        e.preventDefault();
+                        uploadArea.classList.add('dragover');
+                    });
+                    
+                    uploadArea.addEventListener('dragleave', function() {
+                        uploadArea.classList.remove('dragover');
+                    });
+                    
+                    uploadArea.addEventListener('drop', function(e) {
+                        e.preventDefault();
+                        uploadArea.classList.remove('dragover');
+                        var files = e.dataTransfer.files;
+                        if (files.length > 0) {
+                            handleFileUpload(files[0]);
+                        }
+                    });
+                }
+                
+                window.handleFileSelect = function(event) {
+                    var files = event.target.files;
+                    if (files.length > 0) {
+                        handleFileUpload(files[0]);
+                    }
+                }
+                
+                window.handleFileUpload = function(file) {
+                    var formData = new FormData();
+                    formData.append('file', file);
+                    
+                    var messageDiv = document.getElementById('uploadMessage');
+                    messageDiv.innerHTML = '<div class=\"upload-message\">⏳ Uploading and validating...</div>';
+                    
+                    fetch('/api/upload', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(function(response) { return response.json(); })
+                    .then(function(data) {
+                        if (data.success) {
+                            messageDiv.innerHTML = '<div class=\"upload-message success\">✅ ' + data.message + '</div>';
+                            setTimeout(closeUploadModal, 2500);
+                        } else {
+                            messageDiv.innerHTML = '<div class=\"upload-message error\">❌ ' + data.error + '</div>';
+                        }
+                    })
+                    .catch(function(error) {
+                        messageDiv.innerHTML = '<div class=\"upload-message error\">❌ Upload failed: ' + error + '</div>';
+                    });
+                }
+            </script>
 """
     )
 
