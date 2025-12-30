@@ -58,6 +58,9 @@ def load_dataset(file_path: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]
 
 def get_dataset_preview(df: pd.DataFrame, rows: int = 5) -> dict:
     """Get preview of dataset with basic statistics."""
+    import numpy as np
+    import json
+    
     try:
         numeric_summary = df.describe().to_dict() if len(df.select_dtypes(include=['number']).columns) > 0 else {}
     except:
@@ -73,13 +76,35 @@ def get_dataset_preview(df: pd.DataFrame, rows: int = 5) -> dict:
     for col, count in df.isnull().sum().to_dict().items():
         missing_values[str(col)] = int(count)
     
+    # Replace NaN and infinity with None for JSON serialization
+    def clean_for_json(obj):
+        """Recursively clean objects for JSON serialization."""
+        if isinstance(obj, dict):
+            return {k: clean_for_json(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [clean_for_json(item) for item in obj]
+        elif isinstance(obj, float):
+            if np.isnan(obj) or np.isinf(obj):
+                return None
+            return obj
+        elif isinstance(obj, (np.integer, np.floating)):
+            if np.isnan(obj) or np.isinf(obj):
+                return None
+            return float(obj)
+        return obj
+    
+    head_data = df.head(rows).to_dict(orient='records')
+    head_data = clean_for_json(head_data)
+    
+    numeric_summary = clean_for_json(numeric_summary)
+    
     return {
         'shape': list(df.shape),  # Convert tuple to list for JSON serialization
         'columns': [str(c) for c in df.columns.tolist()],
         'dtypes': dtypes_dict,
-        'head': df.head(rows).to_dict(orient='records'),
+        'head': head_data,
         'missing_values': missing_values,
-        'numeric_summary': {str(k): {str(k2): (float(v2) if v2 is not None else None) for k2, v2 in v.items()} for k, v in numeric_summary.items()},
+        'numeric_summary': numeric_summary,
     }
 
 
