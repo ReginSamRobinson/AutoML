@@ -16,7 +16,7 @@ from .engine import AutoMLResult
 
 
 def run_dashboard_qt(
-    result: AutoMLResult,
+    result: Optional[AutoMLResult] = None,
     *,
     host: str = "127.0.0.1",
     port: int = 5000,
@@ -24,7 +24,16 @@ def run_dashboard_qt(
     height: int = 900,
     title: str = "AutoML Decision Hub",
 ) -> None:
-    """Launch the dashboard in a native Qt window using the existing HTML app."""
+    """Launch the dashboard in a native Qt window using the existing HTML app.
+    
+    Args:
+        result: Optional AutoML results. If None, the dashboard starts in upload/config mode.
+        host: Server host address
+        port: Server port number
+        width: Window width in pixels
+        height: Window height in pixels
+        title: Window title
+    """
 
     app = QApplication.instance() or QApplication(sys.argv)
 

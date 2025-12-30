@@ -3,99 +3,29 @@
 from __future__ import annotations
 
 import warnings
-import pandas as pd
-from sklearn.datasets import load_breast_cancer
-
-from automl import (
-    AutoMLEngine,
-    ConstraintValidator,
-    DatasetAnalyzer,
-    Evaluator,
-    ModelRegistry,
-    ResourceConstraints,
-    ResourceMonitor,
-    run_dashboard_qt,
-    export_to_html,
-)
+from automl import run_dashboard
 
 # Suppress sklearn deprecation warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 
 
 def main() -> None:
-    """Run an example AutoML search on the breast cancer dataset."""
+    """Launch the AutoML dashboard UI first, then run from there."""
 
-    dataset = load_breast_cancer(as_frame=True)
-    features: pd.DataFrame = dataset.data
-    target: pd.Series = dataset.target
-
-    analyzer = DatasetAnalyzer()
-    registry = ModelRegistry()
-    evaluator = Evaluator(cv_folds=5)
-    monitor = ResourceMonitor(sample_interval=0.2)
-
-    engine = AutoMLEngine(
-        analyzer=analyzer,
-        registry=registry,
-        validator_factory=lambda constraints: ConstraintValidator(constraints),
-        evaluator=evaluator,
-        monitor=monitor,
-    )
-
-    constraints = ResourceConstraints(
-        max_training_time=30.0,
-        max_ram_mb=2048.0,
-        min_performance=0.85,
-        interpretability_required=False,
-        preferred_metrics=["accuracy"],
-    )
-
-    metrics = ["accuracy", "f1", "roc_auc"]
-
-    result = engine.run(features, target, constraints=constraints, metrics=metrics)
-
-    print("Best model:")
-    if result.best_result is None:
-        print("  No valid model satisfied the constraints.")
-    else:
-        best = result.best_result
-        print(f"  Model: {best.model_name}")
-        print(f"  Primary Metric ({best.primary_metric}): {best.metrics[best.primary_metric]:.4f}")
-        print(f"  Training Time: {best.resource_usage.training_time:.2f}s")
-        if best.violations:
-            print("  Constraint Violations:")
-            for violation in best.violations:
-                print(f"    - {violation.details}")
-        else:
-            print("  Constraint Violations: None")
-
-    print("\nLeaderboard:")
-    if not result.leaderboard:
-        print("  No evaluation results available.")
-    else:
-        for entry in result.leaderboard:
-            violations_summary = ", ".join(v.details for v in entry.result.violations) or "None"
-            metrics_display = ", ".join(
-                f"{name}={value:.4f}"
-                for name, value in entry.result.metrics.items()
-                if not name.endswith("_std")
-            )
-            print(
-                f"  #{entry.rank} {entry.result.model_name} | Score={entry.combined_score:.3f} | "
-                f"{metrics_display} | Time={entry.result.resource_usage.training_time:.2f}s | "
-                f"RAM={entry.result.resource_usage.peak_ram_mb:.1f}MB | Violations={violations_summary}"
-            )
-
-    # Launch the dashboard
+    # Launch the dashboard without any results initially
+    # The UI will provide upload and run capabilities
     print("\n" + "="*60)
-    print("🚀 Launching AutoML Results Dashboard...")
+    print("🚀 Launching AutoML Dashboard...")
     print("="*60)
+    print("\n📊 UI is now ready!")
+    print("   1. Upload your dataset")
+    print("   2. Configure AutoML parameters")
+    print("   3. Click 'Run AutoML' to start the engine")
+    print("   4. View results in the dashboard\n")
     
-    # Export HTML report
-    export_to_html(result, "automl_report.html")
-    
-    # Launch as a native Qt window with the existing dashboard HTML.
-    run_dashboard_qt(result)
+    # Launch the dashboard with no initial results
+    # UI starts in upload/config mode
+    run_dashboard()
 
 
 if __name__ == "__main__":

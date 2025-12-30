@@ -18,48 +18,55 @@ from werkzeug.utils import secure_filename
 from .engine import AutoMLResult
 from .visualizer import ResultVisualizer
 from .data_upload import allowed_file, load_dataset, get_dataset_preview, validate_dataset, create_upload_folder, ALLOWED_EXTENSIONS
+from .config import ResourceConstraints
 
 
 def create_app(result: Optional[AutoMLResult] = None) -> Flask:
     """Create and configure the Flask application."""
     app = Flask(__name__)
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+    
+    # State management for results that can be updated during runtime
+    app_state = {"result": result}
 
     @app.route("/")
     def index():
         """Render the main dashboard."""
-        if result is None:
-            return "<h1>No AutoML results to display</h1>"
+        current_result = app_state.get("result")
+        if current_result is None:
+            return _build_initial_ui()
 
         visualizer = ResultVisualizer()
-        leaderboard_df = visualizer.leaderboard_to_dataframe(result)
-        resource_df = visualizer.resource_usage_summary(result)
-        best_model = visualizer.best_model_summary(result)
+        leaderboard_df = visualizer.leaderboard_to_dataframe(current_result)
+        resource_df = visualizer.resource_usage_summary(current_result)
+        best_model = visualizer.best_model_summary(current_result)
 
-        return _build_html_dashboard(leaderboard_df, resource_df, best_model, result)
+        return _build_html_dashboard(leaderboard_df, resource_df, best_model, current_result)
 
     @app.route("/api/leaderboard")
     def api_leaderboard():
         """JSON payload for leaderboard values."""
-        if result is None:
+        current_result = app_state.get("result")
+        if current_result is None:
             return jsonify([])
 
         visualizer = ResultVisualizer()
-        leaderboard_df = visualizer.leaderboard_to_dataframe(result)
+        leaderboard_df = visualizer.leaderboard_to_dataframe(current_result)
         return jsonify(leaderboard_df.to_dict("records"))
 
     @app.route("/api/charts/leaderboard")
     def chart_leaderboard():
         """Generate final decision chart."""
-        if result is None or not result.leaderboard:
+        current_result = app_state.get("result")
+        if current_result is None or not current_result.leaderboard:
             return jsonify({"error": "No data"})
 
         visualizer = ResultVisualizer()
-        leaderboard_df = visualizer.leaderboard_to_dataframe(result)
+        leaderboard_df = visualizer.leaderboard_to_dataframe(current_result)
         if leaderboard_df.empty or "Combined Score" not in leaderboard_df.columns:
             return jsonify({"error": "No data"})
 
-        resource_df = visualizer.resource_usage_summary(result)
+        resource_df = visualizer.resource_usage_summary(current_result)
 
         combined_scores = pd.to_numeric(leaderboard_df["Combined Score"], errors="coerce").fillna(0.0)
         score_range = combined_scores.max() - combined_scores.min()
@@ -157,12 +164,13 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
     @app.route("/api/charts/metrics")
     def chart_metrics():
         """Generate model quality chart."""
-        if result is None or not result.leaderboard:
+        current_result = app_state.get("result")
+        if current_result is None or not current_result.leaderboard:
             return jsonify({"error": "No data"})
 
         visualizer = ResultVisualizer()
-        leaderboard_df = visualizer.leaderboard_to_dataframe(result)
-        metrics_summary = visualizer.metrics_summary(result)
+        leaderboard_df = visualizer.leaderboard_to_dataframe(current_result)
+        metrics_summary = visualizer.metrics_summary(current_result)
 
         if leaderboard_df.empty or not metrics_summary:
             return jsonify({"error": "No data"})
@@ -262,12 +270,13 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
     @app.route("/api/charts/resources")
     def chart_resources():
         """Generate resource cost chart."""
-        if result is None or not result.leaderboard:
+        current_result = app_state.get("result")
+        if current_result is None or not current_result.leaderboard:
             return jsonify({"error": "No data"})
 
         visualizer = ResultVisualizer()
-        resource_df = visualizer.resource_usage_summary(result)
-        leaderboard_df = visualizer.leaderboard_to_dataframe(result)
+        resource_df = visualizer.resource_usage_summary(current_result)
+        leaderboard_df = visualizer.leaderboard_to_dataframe(current_result)
 
         if resource_df.empty:
             return jsonify({"error": "No data"})
@@ -400,6 +409,11 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
     app.config['UPLOAD_FOLDER'] = upload_folder
     app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB
 
+    @app.route("/api/health")
+    def health():
+        """Health check endpoint."""
+        return jsonify({'status': 'ok', 'upload_folder': str(app.config.get('UPLOAD_FOLDER', 'not set'))}), 200
+
     @app.route("/api/upload", methods=['POST'])
     def upload_dataset():
         """Handle dataset file upload."""
@@ -417,17 +431,23 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
             # Save file
             filename = secure_filename(file.filename)
             filepath = Path(app.config['UPLOAD_FOLDER']) / filename
+            
+            # Ensure the directory exists
+            filepath.parent.mkdir(parents=True, exist_ok=True)
+            
             file.save(str(filepath))
             
             # Load and validate dataset
             df, load_error = load_dataset(str(filepath))
             if load_error:
-                filepath.unlink()
+                if filepath.exists():
+                    filepath.unlink()
                 return jsonify({'error': load_error}), 400
             
             is_valid, validation_error = validate_dataset(df)
             if not is_valid:
-                filepath.unlink()
+                if filepath.exists():
+                    filepath.unlink()
                 return jsonify({'error': validation_error}), 400
             
             # Get preview
@@ -442,7 +462,10 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
             }), 200
         
         except Exception as e:
-            return jsonify({'error': f'Upload failed: {str(e)}'}), 500
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"Upload error: {error_trace}")
+            return jsonify({'error': f'Upload failed: {str(e)}', 'details': error_trace}), 500
 
     @app.route("/api/datasets", methods=['GET'])
     def list_datasets():
@@ -511,7 +534,538 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
         except Exception as e:
             return jsonify({'error': f'Failed to delete dataset: {str(e)}'}), 500
 
+    @app.route("/api/run", methods=['POST'])
+    def run_automl():
+        """Execute the AutoML engine with uploaded dataset and parameters."""
+        try:
+            from .engine import AutoMLEngine
+            from .dataset_analysis import DatasetAnalyzer
+            from .model_registry import ModelRegistry
+            from .constraint import ConstraintValidator
+            from .evaluation import Evaluator
+            from .resource_monitor import ResourceMonitor
+            import warnings
+            warnings.filterwarnings('ignore', category=FutureWarning)
+            
+            data = request.get_json()
+            dataset_filename = data.get('dataset')
+            
+            if not dataset_filename:
+                return jsonify({'error': 'No dataset specified'}), 400
+            
+            # Load the dataset
+            filepath = Path(app.config['UPLOAD_FOLDER']) / dataset_filename
+            if not filepath.exists():
+                return jsonify({'error': 'Dataset not found'}), 404
+            
+            df, load_error = load_dataset(str(filepath))
+            if load_error:
+                return jsonify({'error': load_error}), 400
+            
+            # Get features and target
+            target_column = data.get('target_column')
+            if not target_column or target_column not in df.columns:
+                # Try to infer target column (last column by default)
+                target_column = df.columns[-1]
+            
+            target = df[target_column]
+            features = df.drop(columns=[target_column])
+            
+            # Get constraints from request
+            max_training_time = float(data.get('max_training_time', 60.0))
+            max_ram_mb = float(data.get('max_ram_mb', 2048.0))
+            min_performance = float(data.get('min_performance', 0.70))
+            
+            # Get metrics
+            metrics = data.get('metrics', ['accuracy', 'f1', 'roc_auc'])
+            
+            # Initialize AutoML components
+            analyzer = DatasetAnalyzer()
+            registry = ModelRegistry()
+            evaluator = Evaluator(cv_folds=5)
+            monitor = ResourceMonitor(sample_interval=0.2)
+            
+            engine = AutoMLEngine(
+                analyzer=analyzer,
+                registry=registry,
+                validator_factory=lambda constraints: ConstraintValidator(constraints),
+                evaluator=evaluator,
+                monitor=monitor,
+            )
+            
+            # Create constraints
+            constraints = ResourceConstraints(
+                max_training_time=max_training_time,
+                max_ram_mb=max_ram_mb,
+                min_performance=min_performance,
+                interpretability_required=False,
+                preferred_metrics=metrics,
+            )
+            
+            # Run the engine
+            engine_result = engine.run(features, target, constraints=constraints, metrics=metrics)
+            
+            # Store result in app state
+            app_state["result"] = engine_result
+            
+            # Return summary
+            return jsonify({
+                'success': True,
+                'message': 'AutoML run completed',
+                'best_model': engine_result.best_result.model_name if engine_result.best_result else None,
+                'leaderboard_size': len(engine_result.leaderboard)
+            }), 200
+            
+        except Exception as e:
+            import traceback
+            return jsonify({'error': f'AutoML run failed: {str(e)}', 'traceback': traceback.format_exc()}), 500
+
     return app
+
+
+def _build_initial_ui() -> str:
+    """Build the initial UI for dataset upload and AutoML configuration."""
+    return """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AutoML Decision Hub</title>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            body {
+                background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                color: #e6edf7;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+                min-height: 100vh;
+                padding: 20px;
+            }
+            
+            .container {
+                max-width: 1000px;
+                margin: 0 auto;
+            }
+            
+            header {
+                text-align: center;
+                margin-bottom: 40px;
+            }
+            
+            header h1 {
+                font-size: 2.5em;
+                margin-bottom: 10px;
+                background: linear-gradient(135deg, #5fe3c0 0%, #60a5fa 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+            }
+            
+            header p {
+                color: #94a3b8;
+                font-size: 1.1em;
+            }
+            
+            .card {
+                background: rgba(30, 41, 59, 0.8);
+                border: 1px solid rgba(148, 163, 184, 0.2);
+                border-radius: 12px;
+                padding: 30px;
+                margin-bottom: 20px;
+                backdrop-filter: blur(10px);
+            }
+            
+            .card h2 {
+                margin-bottom: 20px;
+                font-size: 1.5em;
+                color: #60a5fa;
+            }
+            
+            .form-group {
+                margin-bottom: 20px;
+            }
+            
+            label {
+                display: block;
+                margin-bottom: 8px;
+                font-weight: 500;
+                color: #cbd5e1;
+            }
+            
+            input[type="file"],
+            input[type="text"],
+            input[type="number"],
+            select {
+                width: 100%;
+                padding: 12px;
+                background: rgba(15, 23, 42, 0.7);
+                border: 1px solid rgba(148, 163, 184, 0.3);
+                border-radius: 8px;
+                color: #e6edf7;
+                font-family: inherit;
+                font-size: 1em;
+                transition: all 0.3s ease;
+            }
+            
+            input[type="file"]::file-selector-button {
+                background: #3b82f6;
+                color: white;
+                padding: 8px 16px;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                font-weight: 500;
+            }
+            
+            input[type="file"]::file-selector-button:hover {
+                background: #2563eb;
+            }
+            
+            input:focus,
+            select:focus {
+                outline: none;
+                border-color: #60a5fa;
+                box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.1);
+            }
+            
+            .form-row {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 20px;
+            }
+            
+            .button-group {
+                display: flex;
+                gap: 10px;
+                margin-top: 30px;
+            }
+            
+            button {
+                flex: 1;
+                padding: 12px 24px;
+                font-size: 1em;
+                font-weight: 600;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            
+            .btn-upload {
+                background: #3b82f6;
+                color: white;
+            }
+            
+            .btn-upload:hover {
+                background: #2563eb;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+            }
+            
+            .btn-run {
+                background: #10b981;
+                color: white;
+            }
+            
+            .btn-run:hover {
+                background: #059669;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+            }
+            
+            .btn-run:disabled {
+                background: #6b7280;
+                cursor: not-allowed;
+                transform: none;
+            }
+            
+            .alert {
+                padding: 15px;
+                border-radius: 8px;
+                margin-bottom: 20px;
+                display: none;
+            }
+            
+            .alert.success {
+                background: rgba(16, 185, 129, 0.1);
+                color: #10b981;
+                border: 1px solid rgba(16, 185, 129, 0.3);
+                display: block;
+            }
+            
+            .alert.error {
+                background: rgba(239, 68, 68, 0.1);
+                color: #ef4444;
+                border: 1px solid rgba(239, 68, 68, 0.3);
+                display: block;
+            }
+            
+            .status {
+                padding: 15px;
+                background: rgba(59, 130, 246, 0.1);
+                border: 1px solid rgba(59, 130, 246, 0.3);
+                border-radius: 8px;
+                margin-bottom: 20px;
+                display: none;
+            }
+            
+            .status.active {
+                display: block;
+            }
+            
+            .spinner {
+                display: inline-block;
+                width: 16px;
+                height: 16px;
+                border: 2px solid rgba(96, 165, 250, 0.2);
+                border-top-color: #60a5fa;
+                border-radius: 50%;
+                animation: spin 0.8s linear infinite;
+                margin-right: 8px;
+            }
+            
+            @keyframes spin {
+                to { transform: rotate(360deg); }
+            }
+            
+            .dataset-preview {
+                background: rgba(15, 23, 42, 0.5);
+                border: 1px solid rgba(148, 163, 184, 0.2);
+                border-radius: 8px;
+                padding: 15px;
+                margin-top: 15px;
+                max-height: 300px;
+                overflow-y: auto;
+                font-family: 'Monaco', 'Menlo', monospace;
+                font-size: 0.85em;
+            }
+            
+            .info-box {
+                background: rgba(96, 165, 250, 0.05);
+                border-left: 4px solid #60a5fa;
+                padding: 15px;
+                border-radius: 6px;
+                margin-bottom: 20px;
+            }
+            
+            .info-box strong {
+                color: #60a5fa;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <header>
+                <h1>🚀 AutoML Decision Hub</h1>
+                <p>Upload your data and let AI find the best model</p>
+            </header>
+            
+            <div class="card">
+                <h2>📊 Step 1: Upload Dataset</h2>
+                <div class="info-box">
+                    <strong>Supported formats:</strong> CSV, Excel (.xlsx, .xls), Parquet, JSON
+                </div>
+                
+                <div class="alert" id="alertBox"></div>
+                <div class="status" id="statusBox">
+                    <span class="spinner"></span>
+                    <span id="statusText">Processing...</span>
+                </div>
+                
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label for="datasetFile">Select Dataset File:</label>
+                        <input type="file" id="datasetFile" name="file" accept=".csv,.xlsx,.xls,.parquet,.json" required>
+                    </div>
+                    <button type="button" class="btn-upload" onclick="uploadDataset()">Upload Dataset</button>
+                </form>
+                
+                <div class="dataset-preview" id="preview" style="display: none;"></div>
+            </div>
+            
+            <div class="card">
+                <h2>⚙️ Step 2: Configure AutoML</h2>
+                <form id="configForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="targetColumn">Target Column:</label>
+                            <select id="targetColumn" required>
+                                <option value="">-- Auto-detect (last column) --</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="maxTime">Max Training Time (seconds):</label>
+                            <input type="number" id="maxTime" value="60" min="10" max="3600" step="10">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="maxRAM">Max RAM (MB):</label>
+                            <input type="number" id="maxRAM" value="2048" min="512" max="16384" step="256">
+                        </div>
+                        <div class="form-group">
+                            <label for="minPerf">Min Performance:</label>
+                            <input type="number" id="minPerf" value="0.70" min="0" max="1" step="0.05">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            
+            <div class="card">
+                <div class="button-group">
+                    <button class="btn-run" id="runButton" onclick="runAutoML()" disabled>
+                        ▶ Run AutoML
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+            let uploadedDataset = null;
+            
+            function showAlert(message, type = 'error') {
+                const alertBox = document.getElementById('alertBox');
+                alertBox.textContent = message;
+                alertBox.className = `alert ${type}`;
+                setTimeout(() => {
+                    alertBox.className = 'alert';
+                }, 5000);
+            }
+            
+            function showStatus(message) {
+                const statusBox = document.getElementById('statusBox');
+                document.getElementById('statusText').textContent = message;
+                statusBox.classList.add('active');
+            }
+            
+            function hideStatus() {
+                document.getElementById('statusBox').classList.remove('active');
+            }
+            
+            async function uploadDataset() {
+                const fileInput = document.getElementById('datasetFile');
+                const file = fileInput.files[0];
+                
+                if (!file) {
+                    showAlert('Please select a file');
+                    return;
+                }
+                
+                showStatus('Uploading dataset...');
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                try {
+                    const response = await fetch('/api/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (!response.ok) {
+                        showAlert(result.error || 'Upload failed');
+                        hideStatus();
+                        return;
+                    }
+                    
+                    uploadedDataset = result.filename;
+                    
+                    // Update target column selector
+                    const columns = result.preview.columns || [];
+                    const targetSelect = document.getElementById('targetColumn');
+                    targetSelect.innerHTML = '<option value="">-- Auto-detect (last column) --</option>';
+                    columns.forEach(col => {
+                        const option = document.createElement('option');
+                        option.value = col;
+                        option.textContent = col;
+                        targetSelect.appendChild(option);
+                    });
+                    
+                    // Show preview
+                    const preview = document.getElementById('preview');
+                    preview.innerHTML = '<strong>Dataset Preview:</strong><pre>' + 
+                        JSON.stringify(result.preview.head, null, 2) + '</pre>';
+                    preview.style.display = 'block';
+                    
+                    // Enable run button
+                    document.getElementById('runButton').disabled = false;
+                    
+                    showAlert('Dataset uploaded successfully!', 'success');
+                    hideStatus();
+                } catch (error) {
+                    showAlert('Error uploading dataset: ' + error.message);
+                    hideStatus();
+                }
+            }
+            
+            async function runAutoML() {
+                if (!uploadedDataset) {
+                    showAlert('Please upload a dataset first');
+                    return;
+                }
+                
+                showStatus('🤖 AutoML is running... This may take a few minutes.');
+                document.getElementById('runButton').disabled = true;
+                
+                const payload = {
+                    dataset: uploadedDataset,
+                    target_column: document.getElementById('targetColumn').value || null,
+                    max_training_time: parseFloat(document.getElementById('maxTime').value),
+                    max_ram_mb: parseFloat(document.getElementById('maxRAM').value),
+                    min_performance: parseFloat(document.getElementById('minPerf').value),
+                    metrics: ['accuracy', 'f1', 'roc_auc']
+                };
+                
+                try {
+                    const response = await fetch('/api/run', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (!response.ok) {
+                        showAlert(result.error || 'AutoML run failed');
+                        document.getElementById('runButton').disabled = false;
+                        hideStatus();
+                        return;
+                    }
+                    
+                    showAlert('AutoML completed! Reloading dashboard...', 'success');
+                    
+                    // Reload page to show results
+                    setTimeout(() => {
+                        location.reload();
+                    }, 2000);
+                } catch (error) {
+                    showAlert('Error running AutoML: ' + error.message);
+                    document.getElementById('runButton').disabled = false;
+                    hideStatus();
+                }
+            }
+            
+            // Allow uploading by pressing Enter
+            document.getElementById('datasetFile').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') uploadDataset();
+            });
+        </script>
+    </body>
+    </html>
+    """
 
 
 def _build_html_dashboard(
@@ -1985,8 +2539,15 @@ def _build_html_dashboard(
     return html_output
 
 
-def run_dashboard(result: AutoMLResult, host: str = "127.0.0.1", port: int = 5000, debug: bool = False) -> None:
-    """Run the dashboard server."""
+def run_dashboard(result: Optional[AutoMLResult] = None, host: str = "127.0.0.1", port: int = 5000, debug: bool = False) -> None:
+    """Run the dashboard server.
+    
+    Args:
+        result: Optional AutoML results. If None, the dashboard starts in upload/config mode.
+        host: Server host address
+        port: Server port number
+        debug: Enable Flask debug mode
+    """
     app = create_app(result)
     print(f"\n{'=' * 60}")
     print("🚀 Starting AutoML Decision Dashboard")
@@ -1997,7 +2558,7 @@ def run_dashboard(result: AutoMLResult, host: str = "127.0.0.1", port: int = 500
 
 
 def run_dashboard_app(
-    result: AutoMLResult,
+    result: Optional[AutoMLResult] = None,
     host: str = "127.0.0.1",
     port: int = 5000,
     width: int = 1280,
@@ -2007,6 +2568,13 @@ def run_dashboard_app(
 
     Spins up the Flask app in-process and embeds it in a pywebview window. The
     server shuts down automatically when the window closes.
+    
+    Args:
+        result: Optional AutoML results. If None, the dashboard starts in upload/config mode.
+        host: Server host address
+        port: Server port number
+        width: Window width in pixels
+        height: Window height in pixels
     """
 
     try:
