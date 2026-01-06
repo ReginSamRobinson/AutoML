@@ -1,0 +1,412 @@
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AutoML Results Report</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: #f5f5f5;
+                padding: 20px;
+                line-height: 1.6;
+            }
+            .container {
+                max-width: 1000px;
+                margin: 0 auto;
+                background: white;
+                padding: 40px;
+                border-radius: 8px;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            }
+            h1 {
+                color: #333;
+                margin-bottom: 10px;
+                border-bottom: 3px solid #667eea;
+                padding-bottom: 15px;
+                font-size: 2.5em;
+            }
+            h2 {
+                color: #333;
+                margin-top: 40px;
+                margin-bottom: 20px;
+                border-left: 4px solid #667eea;
+                padding-left: 15px;
+                font-size: 1.8em;
+            }
+            .summary {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 25px;
+                border-radius: 8px;
+                margin: 20px 0;
+            }
+            .summary-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 20px;
+                margin-top: 20px;
+            }
+            .summary-item {
+                background: rgba(255, 255, 255, 0.15);
+                padding: 15px;
+                border-radius: 6px;
+                border-left: 3px solid rgba(255, 255, 255, 0.5);
+            }
+            .summary-item-label {
+                font-size: 0.9em;
+                opacity: 0.9;
+                margin-bottom: 5px;
+            }
+            .summary-item-value {
+                font-size: 1.5em;
+                font-weight: bold;
+            }
+            .dataframe-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 20px 0;
+                font-size: 0.95em;
+            }
+            .dataframe-table th {
+                background: #667eea;
+                color: white;
+                padding: 12px;
+                text-align: left;
+                font-weight: 600;
+            }
+            .dataframe-table td {
+                padding: 12px;
+                border-bottom: 1px solid #e0e0e0;
+            }
+            .dataframe-table tr:hover {
+                background: #f5f5f5;
+            }
+            .dataframe-table tr:nth-child(even) {
+                background: #fafafa;
+            }
+            .footer {
+                text-align: center;
+                color: #999;
+                margin-top: 40px;
+                padding-top: 20px;
+                border-top: 1px solid #e0e0e0;
+                font-size: 0.9em;
+            }
+            .violation {
+                background: #fee;
+                color: #c33;
+                padding: 10px;
+                border-radius: 4px;
+                border-left: 3px solid #c33;
+                margin: 5px 0;
+            }
+            .metric-badge {
+                display: inline-block;
+                background: #e0e7ff;
+                color: #667eea;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 0.85em;
+                margin: 2px;
+                font-weight: 500;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🤖 AutoML Results Report</h1>
+            <p style="color: #666; margin: 10px 0;">Comprehensive AutoML Framework Analysis</p>
+            
+            <div class="summary">
+                <h3>🏆 Best Model</h3>
+    
+                <div class="summary-grid">
+                    <div class="summary-item">
+                        <div class="summary-item-label">Model Name</div>
+                        <div class="summary-item-value">logistic_regression</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-item-label">accuracy</div>
+                        <div class="summary-item-value">0.9754</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-item-label">Training Time</div>
+                        <div class="summary-item-value">0.20s</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-item-label">Peak RAM</div>
+                        <div class="summary-item-value">182.2MB</div>
+                    </div>
+                </div>
+                
+                <div style='margin-top: 15px;'><strong>All Metrics:</strong><span class='metric-badge'>ACCURACY: 0.9754</span><span class='metric-badge'>F1: 0.9804</span><span class='metric-badge'>ROC_AUC: 0.9959</span></div>
+        
+            </div>
+            
+            <h2>📊 Leaderboard</h2>
+            <p>All evaluated models ranked by combined performance and resource efficiency score.</p>
+            <table border="1" class="dataframe dataframe-table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Rank</th>
+      <th>Model</th>
+      <th>Combined Score</th>
+      <th>Training Time (s)</th>
+      <th>Peak RAM (MB)</th>
+      <th>Avg CPU (%)</th>
+      <th>Violations</th>
+      <th>ACCURACY</th>
+      <th>F1</th>
+      <th>ROC_AUC</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>logistic_regression</td>
+      <td>0.6924</td>
+      <td>0.20</td>
+      <td>182.2</td>
+      <td>70.3</td>
+      <td>0</td>
+      <td>0.9754</td>
+      <td>0.9804</td>
+      <td>0.9959</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>logistic_regression</td>
+      <td>0.6256</td>
+      <td>0.40</td>
+      <td>182.2</td>
+      <td>74.0</td>
+      <td>0</td>
+      <td>0.9719</td>
+      <td>0.9777</td>
+      <td>0.9951</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>logistic_regression</td>
+      <td>0.4959</td>
+      <td>0.20</td>
+      <td>180.5</td>
+      <td>54.6</td>
+      <td>0</td>
+      <td>0.9631</td>
+      <td>0.9709</td>
+      <td>0.9941</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td>random_forest</td>
+      <td>0.4498</td>
+      <td>1.84</td>
+      <td>188.2</td>
+      <td>154.7</td>
+      <td>0</td>
+      <td>0.9666</td>
+      <td>0.9732</td>
+      <td>0.9894</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td>random_forest</td>
+      <td>0.3806</td>
+      <td>1.85</td>
+      <td>191.1</td>
+      <td>141.7</td>
+      <td>0</td>
+      <td>0.9631</td>
+      <td>0.9707</td>
+      <td>0.9906</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td>xgboost</td>
+      <td>0.3087</td>
+      <td>0.60</td>
+      <td>201.7</td>
+      <td>1061.1</td>
+      <td>0</td>
+      <td>0.9613</td>
+      <td>0.9695</td>
+      <td>0.9936</td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td>xgboost</td>
+      <td>0.2714</td>
+      <td>0.61</td>
+      <td>203.8</td>
+      <td>1060.6</td>
+      <td>0</td>
+      <td>0.9596</td>
+      <td>0.9678</td>
+      <td>0.9940</td>
+    </tr>
+    <tr>
+      <td>8</td>
+      <td>random_forest</td>
+      <td>0.2554</td>
+      <td>1.84</td>
+      <td>193.9</td>
+      <td>116.3</td>
+      <td>0</td>
+      <td>0.9561</td>
+      <td>0.9649</td>
+      <td>0.9888</td>
+    </tr>
+    <tr>
+      <td>9</td>
+      <td>gradient_boosting</td>
+      <td>0.1162</td>
+      <td>3.81</td>
+      <td>193.9</td>
+      <td>91.5</td>
+      <td>0</td>
+      <td>0.9525</td>
+      <td>0.9624</td>
+      <td>0.9838</td>
+    </tr>
+    <tr>
+      <td>10</td>
+      <td>gradient_boosting</td>
+      <td>0.0956</td>
+      <td>3.61</td>
+      <td>193.9</td>
+      <td>92.3</td>
+      <td>0</td>
+      <td>0.9508</td>
+      <td>0.9610</td>
+      <td>0.9822</td>
+    </tr>
+    <tr>
+      <td>11</td>
+      <td>xgboost</td>
+      <td>0.0875</td>
+      <td>0.80</td>
+      <td>203.9</td>
+      <td>1076.2</td>
+      <td>0</td>
+      <td>0.9491</td>
+      <td>0.9597</td>
+      <td>0.9915</td>
+    </tr>
+    <tr>
+      <td>12</td>
+      <td>gradient_boosting</td>
+      <td>-0.1453</td>
+      <td>2.41</td>
+      <td>193.9</td>
+      <td>87.7</td>
+      <td>0</td>
+      <td>0.9332</td>
+      <td>0.9480</td>
+      <td>0.9861</td>
+    </tr>
+  </tbody>
+</table>
+            
+            <h2>💾 Resource Usage</h2>
+            <p>Training time and memory consumption for each model.</p>
+            <table border="1" class="dataframe dataframe-table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Model</th>
+      <th>Training Time (s)</th>
+      <th>Peak RAM (MB)</th>
+      <th>Avg CPU (%)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>logistic_regression</td>
+      <td>0.201142</td>
+      <td>182.203125</td>
+      <td>70.300000</td>
+    </tr>
+    <tr>
+      <td>logistic_regression</td>
+      <td>0.402504</td>
+      <td>182.199219</td>
+      <td>74.000000</td>
+    </tr>
+    <tr>
+      <td>logistic_regression</td>
+      <td>0.202379</td>
+      <td>180.464844</td>
+      <td>54.600000</td>
+    </tr>
+    <tr>
+      <td>random_forest</td>
+      <td>1.843234</td>
+      <td>188.207031</td>
+      <td>154.677778</td>
+    </tr>
+    <tr>
+      <td>random_forest</td>
+      <td>1.852650</td>
+      <td>191.148438</td>
+      <td>141.711111</td>
+    </tr>
+    <tr>
+      <td>xgboost</td>
+      <td>0.604196</td>
+      <td>201.660156</td>
+      <td>1061.066667</td>
+    </tr>
+    <tr>
+      <td>xgboost</td>
+      <td>0.606003</td>
+      <td>203.843750</td>
+      <td>1060.600000</td>
+    </tr>
+    <tr>
+      <td>random_forest</td>
+      <td>1.842598</td>
+      <td>193.925781</td>
+      <td>116.300000</td>
+    </tr>
+    <tr>
+      <td>gradient_boosting</td>
+      <td>3.809805</td>
+      <td>193.890625</td>
+      <td>91.510526</td>
+    </tr>
+    <tr>
+      <td>gradient_boosting</td>
+      <td>3.609590</td>
+      <td>193.902344</td>
+      <td>92.266667</td>
+    </tr>
+    <tr>
+      <td>xgboost</td>
+      <td>0.803245</td>
+      <td>203.875000</td>
+      <td>1076.175000</td>
+    </tr>
+    <tr>
+      <td>gradient_boosting</td>
+      <td>2.406247</td>
+      <td>193.910156</td>
+      <td>87.741667</td>
+    </tr>
+  </tbody>
+</table>
+            
+            <div class="footer">
+                <p>AutoML Framework • Resource-Aware Automated Machine Learning</p>
+                <p style="margin-top: 10px; font-size: 0.85em;">Report generated by AutoML Engine</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    
