@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import copy
 import html
+import json
 import math
 import threading
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -15,9 +17,166 @@ from plotly.subplots import make_subplots
 from werkzeug.serving import make_server
 from werkzeug.utils import secure_filename
 
-from .engine import AutoMLResult
+from .config import ResourceConstraints
+from .constraint import ConstraintValidator
+from .dataset_analysis import DatasetAnalyzer
+from .evaluation import Evaluator
+from .exporter import export_to_html
+from .engine import AutoMLEngine, AutoMLResult
+from .model_registry import ModelRegistry
+from .resource_monitor import ResourceMonitor
 from .visualizer import ResultVisualizer
-from .data_upload import allowed_file, load_dataset, get_dataset_preview, validate_dataset, create_upload_folder, ALLOWED_EXTENSIONS
+from .data_upload import (
+    ALLOWED_EXTENSIONS,
+    allowed_file,
+    create_upload_folder,
+    get_dataset_preview,
+    load_dataset,
+    validate_dataset,
+)
+
+
+DEFAULT_DASHBOARD_SETTINGS: dict[str, object] = {
+    "cv_folds": 5,
+    "metrics": ["accuracy", "f1", "roc_auc"],
+    "constraints": {
+        "max_training_time": 60.0,
+        "max_ram_mb": 4096.0,
+        "min_performance": 0.85,
+        "interpretability_required": False,
+        "preferred_metrics": ["accuracy"],
+    },
+}
+
+
+def _deep_merge(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
+    merged = copy.deepcopy(base)
+    for key, value in override.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _coerce_float(value: object) -> float | None:
+    if value in (None, "", "null"):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "on"}
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return False
+
+
+def _normalize_metric_list(raw: object) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        tokens = [token.strip() for token in raw.split(",") if token.strip()]
+        return tokens
+    if isinstance(raw, list):
+        tokens = []
+        for item in raw:
+            if isinstance(item, str) and item.strip():
+                tokens.append(item.strip())
+        return tokens
+    return []
+
+
+def _collect_datasets(upload_dir: Path) -> list[dict[str, object]]:
+    datasets: list[dict[str, object]] = []
+    if upload_dir.exists():
+        for file_path in upload_dir.iterdir():
+            if file_path.is_file() and allowed_file(file_path.name):
+                try:
+                    stat = file_path.stat()
+                    datasets.append(
+                        {
+                            "name": file_path.name,
+                            "size": stat.st_size,
+                            "modified": stat.st_mtime,
+                            "path": str(file_path),
+                        }
+                    )
+                except OSError:
+                    continue
+    return sorted(datasets, key=lambda item: item["modified"], reverse=True)
+
+
+def _unique_metrics(metrics: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for metric in metrics:
+        lowered = metric.lower()
+        if lowered not in seen:
+            seen.add(lowered)
+            unique.append(metric)
+    return unique
+
+
+def _sanitize_settings_payload(
+    base_settings: dict[str, object], payload: dict[str, object]
+) -> dict[str, object]:
+    merged = _deep_merge(DEFAULT_DASHBOARD_SETTINGS, base_settings)
+    merged = _deep_merge(merged, payload)
+
+    constraints_in: dict[str, object] = {}
+    merged_constraints = merged.get("constraints")
+    if isinstance(merged_constraints, dict):
+        constraints_in = dict(merged_constraints)
+
+    preferred_metrics = _normalize_metric_list(constraints_in.get("preferred_metrics"))
+    if not preferred_metrics:
+        fallback = []
+        base_constraints = base_settings.get("constraints")
+        if isinstance(base_constraints, dict):
+            fallback = _normalize_metric_list(base_constraints.get("preferred_metrics"))
+        if not fallback:
+            default_constraints = DEFAULT_DASHBOARD_SETTINGS.get("constraints")
+            if isinstance(default_constraints, dict):
+                fallback = _normalize_metric_list(default_constraints.get("preferred_metrics"))
+        preferred_metrics = fallback
+
+    sanitized_constraints = {
+        "max_training_time": _coerce_float(constraints_in.get("max_training_time")),
+        "max_ram_mb": _coerce_float(constraints_in.get("max_ram_mb")),
+        "min_performance": _coerce_float(constraints_in.get("min_performance")),
+        "interpretability_required": _coerce_bool(constraints_in.get("interpretability_required")),
+        "preferred_metrics": _unique_metrics(preferred_metrics) or _unique_metrics(
+            _normalize_metric_list(DEFAULT_DASHBOARD_SETTINGS["constraints"].get("preferred_metrics"))
+        ),
+    }
+
+    metrics_clean = _unique_metrics(_normalize_metric_list(merged.get("metrics")))
+    if not metrics_clean:
+        metrics_clean = _unique_metrics(_normalize_metric_list(base_settings.get("metrics")))
+    if not metrics_clean:
+        metrics_clean = _unique_metrics(_normalize_metric_list(DEFAULT_DASHBOARD_SETTINGS.get("metrics")))
+
+    cv_folds_value = merged.get("cv_folds")
+    try:
+        cv_folds_clean = max(2, int(cv_folds_value))
+    except (TypeError, ValueError):
+        try:
+            cv_folds_clean = max(2, int(DEFAULT_DASHBOARD_SETTINGS.get("cv_folds", 5)))
+        except (TypeError, ValueError):
+            cv_folds_clean = 5
+
+    sanitized = copy.deepcopy(DEFAULT_DASHBOARD_SETTINGS)
+    sanitized["cv_folds"] = cv_folds_clean
+    sanitized["metrics"] = metrics_clean
+    sanitized["constraints"] = sanitized_constraints
+    return sanitized
 
 
 def create_app(result: Optional[AutoMLResult] = None) -> Flask:
@@ -25,41 +184,77 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
     app = Flask(__name__)
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
+    upload_folder = create_upload_folder()
+    app.config["UPLOAD_FOLDER"] = upload_folder
+    app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB
+
+    settings_path = Path(upload_folder) / "settings.json"
+    try:
+        raw_settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        raw_settings = {}
+    settings_cache = _sanitize_settings_payload(DEFAULT_DASHBOARD_SETTINGS, raw_settings)
+    settings_path.write_text(json.dumps(settings_cache, indent=2), encoding="utf-8")
+
+    state: dict[str, Optional[AutoMLResult]] = {"result": result}
+
+    def get_result() -> Optional[AutoMLResult]:
+        return state.get("result")
+
+    def set_result(new_result: Optional[AutoMLResult]) -> None:
+        state["result"] = new_result
+
+    def get_settings() -> dict[str, object]:
+        return copy.deepcopy(settings_cache)
+
+    def persist_settings(new_settings: dict[str, object]) -> None:
+        nonlocal settings_cache
+        settings_cache = copy.deepcopy(new_settings)
+        settings_path.write_text(json.dumps(settings_cache, indent=2), encoding="utf-8")
+
+    def sanitize_settings(payload: dict[str, object]) -> dict[str, object]:
+        return _sanitize_settings_payload(settings_cache, payload)
+
     @app.route("/")
     def index():
-        """Render the main dashboard."""
-        if result is None:
-            return "<h1>No AutoML results to display</h1>"
+        """Render the main dashboard or the onboarding start page."""
+        current = get_result()
+        view = (request.args.get("view") or "").strip().lower()
+        has_result = current is not None
+        if view == "dashboard" and current is not None:
+            visualizer = ResultVisualizer()
+            leaderboard_df = visualizer.leaderboard_to_dataframe(current)
+            resource_df = visualizer.resource_usage_summary(current)
+            best_model = visualizer.best_model_summary(current)
 
-        visualizer = ResultVisualizer()
-        leaderboard_df = visualizer.leaderboard_to_dataframe(result)
-        resource_df = visualizer.resource_usage_summary(result)
-        best_model = visualizer.best_model_summary(result)
+            return _build_html_dashboard(leaderboard_df, resource_df, best_model, current)
 
-        return _build_html_dashboard(leaderboard_df, resource_df, best_model, result)
+        return _build_start_page(get_settings(), sorted(ALLOWED_EXTENSIONS), has_result=has_result)
 
     @app.route("/api/leaderboard")
     def api_leaderboard():
         """JSON payload for leaderboard values."""
-        if result is None:
+        current = get_result()
+        if current is None:
             return jsonify([])
 
         visualizer = ResultVisualizer()
-        leaderboard_df = visualizer.leaderboard_to_dataframe(result)
+        leaderboard_df = visualizer.leaderboard_to_dataframe(current)
         return jsonify(leaderboard_df.to_dict("records"))
 
     @app.route("/api/charts/leaderboard")
     def chart_leaderboard():
         """Generate final decision chart."""
-        if result is None or not result.leaderboard:
+        current = get_result()
+        if current is None or not current.leaderboard:
             return jsonify({"error": "No data"})
 
         visualizer = ResultVisualizer()
-        leaderboard_df = visualizer.leaderboard_to_dataframe(result)
+        leaderboard_df = visualizer.leaderboard_to_dataframe(current)
         if leaderboard_df.empty or "Combined Score" not in leaderboard_df.columns:
             return jsonify({"error": "No data"})
 
-        resource_df = visualizer.resource_usage_summary(result)
+        resource_df = visualizer.resource_usage_summary(current)
 
         combined_scores = pd.to_numeric(leaderboard_df["Combined Score"], errors="coerce").fillna(0.0)
         score_range = combined_scores.max() - combined_scores.min()
@@ -157,12 +352,13 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
     @app.route("/api/charts/metrics")
     def chart_metrics():
         """Generate model quality chart."""
-        if result is None or not result.leaderboard:
+        current = get_result()
+        if current is None or not current.leaderboard:
             return jsonify({"error": "No data"})
 
         visualizer = ResultVisualizer()
-        leaderboard_df = visualizer.leaderboard_to_dataframe(result)
-        metrics_summary = visualizer.metrics_summary(result)
+        leaderboard_df = visualizer.leaderboard_to_dataframe(current)
+        metrics_summary = visualizer.metrics_summary(current)
 
         if leaderboard_df.empty or not metrics_summary:
             return jsonify({"error": "No data"})
@@ -262,12 +458,13 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
     @app.route("/api/charts/resources")
     def chart_resources():
         """Generate resource cost chart."""
-        if result is None or not result.leaderboard:
+        current = get_result()
+        if current is None or not current.leaderboard:
             return jsonify({"error": "No data"})
 
         visualizer = ResultVisualizer()
-        resource_df = visualizer.resource_usage_summary(result)
-        leaderboard_df = visualizer.leaderboard_to_dataframe(result)
+        resource_df = visualizer.resource_usage_summary(current)
+        leaderboard_df = visualizer.leaderboard_to_dataframe(current)
 
         if resource_df.empty:
             return jsonify({"error": "No data"})
@@ -395,10 +592,138 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
 
         return fig.to_json()
 
-    # Dataset upload endpoints
-    upload_folder = create_upload_folder()
-    app.config['UPLOAD_FOLDER'] = upload_folder
-    app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB
+    @app.route("/api/settings", methods=["GET", "POST"])
+    def api_settings():
+        """Read or persist dashboard run settings."""
+        if request.method == "GET":
+            return jsonify({"settings": get_settings()}), 200
+
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "Invalid payload"}), 400
+
+        sanitized = sanitize_settings(payload)
+        persist_settings(sanitized)
+        return jsonify({"settings": sanitized, "message": "Settings saved"}), 200
+
+    @app.route("/api/run", methods=["POST"])
+    def api_run():
+        """Execute a fresh AutoML run using uploaded datasets and saved settings."""
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "Invalid payload"}), 400
+
+        dataset_name = payload.get("dataset")
+        target_column = payload.get("target")
+        if not dataset_name or not target_column:
+            return jsonify({"error": "Dataset name and target column are required"}), 400
+
+        filename = secure_filename(str(dataset_name))
+        dataset_path = Path(app.config["UPLOAD_FOLDER"]) / filename
+        if not dataset_path.exists():
+            return jsonify({"error": "Dataset not found"}), 404
+
+        df, load_error = load_dataset(str(dataset_path))
+        if load_error:
+            return jsonify({"error": load_error}), 400
+
+        if str(target_column) not in df.columns:
+            return jsonify({"error": f"Target column '{target_column}' not found"}), 400
+
+        if df.shape[1] <= 1:
+            return jsonify({"error": "Dataset must contain at least one feature column besides the target"}), 400
+
+        features_df = df.drop(columns=[target_column])
+        if features_df.shape[1] == 0:
+            return jsonify({"error": "Dataset must contain at least one feature column besides the target"}), 400
+        target_series = df[target_column]
+
+        overrides: dict[str, object] = {}
+        if isinstance(payload.get("settings"), dict):
+            overrides = copy.deepcopy(payload["settings"])
+
+        if isinstance(payload.get("constraints"), dict):
+            constraint_override = copy.deepcopy(payload["constraints"])
+            existing_constraints = overrides.get("constraints")
+            if isinstance(existing_constraints, dict):
+                overrides["constraints"] = _deep_merge(existing_constraints, constraint_override)
+            else:
+                overrides["constraints"] = constraint_override
+
+        if payload.get("metrics") is not None:
+            overrides["metrics"] = payload["metrics"]
+
+        if payload.get("cv_folds") is not None and "cv_folds" not in overrides:
+            overrides["cv_folds"] = payload["cv_folds"]
+
+        sanitized = sanitize_settings(overrides)
+        persist_settings(sanitized)
+
+        constraint_payload = sanitized.get("constraints", {})
+        constraints = ResourceConstraints(
+            max_training_time=constraint_payload.get("max_training_time"),
+            max_ram_mb=constraint_payload.get("max_ram_mb"),
+            min_performance=constraint_payload.get("min_performance"),
+            interpretability_required=constraint_payload.get("interpretability_required", False),
+            preferred_metrics=constraint_payload.get("preferred_metrics"),
+        )
+
+        metrics = sanitized.get("metrics", [])
+        if not isinstance(metrics, list) or not metrics:
+            metrics = DEFAULT_DASHBOARD_SETTINGS["metrics"]
+
+        cv_folds_value = sanitized.get("cv_folds", DEFAULT_DASHBOARD_SETTINGS["cv_folds"])
+        try:
+            cv_folds_int = max(2, int(cv_folds_value))
+        except (TypeError, ValueError):
+            cv_folds_int = DEFAULT_DASHBOARD_SETTINGS["cv_folds"]
+
+        engine = AutoMLEngine(
+            analyzer=DatasetAnalyzer(),
+            registry=ModelRegistry(),
+            validator_factory=lambda cfg: ConstraintValidator(cfg),
+            evaluator=Evaluator(cv_folds=cv_folds_int),
+            monitor=ResourceMonitor(),
+        )
+
+        try:
+            result_obj = engine.run(
+                features_df,
+                target_series,
+                constraints=constraints,
+                metrics=[metric for metric in metrics if isinstance(metric, str) and metric],
+            )
+        except Exception as exc:
+            return jsonify({"error": f"AutoML run failed: {exc}"}), 500
+
+        set_result(result_obj)
+
+        report_path = Path(upload_folder).parent / "automl_report.html"
+        try:
+            export_to_html(result_obj, str(report_path))
+        except Exception:
+            pass
+
+        best_summary: dict[str, object] = {}
+        if result_obj.best_result is not None:
+            best = result_obj.best_result
+            best_summary = {
+                "model": best.model_name,
+                "primary_metric": best.primary_metric,
+                "primary_metric_value": best.metrics.get(best.primary_metric),
+                "training_time": best.resource_usage.training_time,
+                "peak_ram_mb": best.resource_usage.peak_ram_mb,
+                "violations": [violation.details for violation in best.violations],
+            }
+
+        response = {
+            "success": True,
+            "message": "AutoML run complete",
+            "leaderboard_size": len(result_obj.leaderboard),
+            "best_result": best_summary,
+            "redirect": "/?view=dashboard",
+        }
+        return jsonify(response), 200
 
     @app.route("/api/upload", methods=['POST'])
     def upload_dataset():
@@ -448,25 +773,9 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
     def list_datasets():
         """List available uploaded datasets."""
         try:
-            upload_dir = Path(app.config['UPLOAD_FOLDER'])
-            datasets = []
-            
-            if upload_dir.exists():
-                for file_path in upload_dir.iterdir():
-                    if file_path.is_file() and allowed_file(file_path.name):
-                        try:
-                            stat = file_path.stat()
-                            datasets.append({
-                                'name': file_path.name,
-                                'size': stat.st_size,
-                                'modified': stat.st_mtime,
-                                'path': str(file_path)
-                            })
-                        except Exception:
-                            continue
-            
-            return jsonify({'datasets': sorted(datasets, key=lambda x: x['modified'], reverse=True)}), 200
-        
+            datasets = _collect_datasets(Path(app.config['UPLOAD_FOLDER']))
+            return jsonify({'datasets': datasets}), 200
+
         except Exception as e:
             return jsonify({'error': f'Failed to list datasets: {str(e)}'}), 500
 
@@ -512,6 +821,812 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
             return jsonify({'error': f'Failed to delete dataset: {str(e)}'}), 500
 
     return app
+
+
+def _build_start_page(
+    settings: dict[str, object],
+    allowed_extensions: list[str],
+    has_result: bool = False,
+) -> str:
+    allowed_sorted = sorted({ext.lower() for ext in allowed_extensions})
+    allowed_display = ", ".join(allowed_sorted) if allowed_sorted else "n/a"
+    settings_json = json.dumps(settings, ensure_ascii=True)
+    allowed_json = json.dumps(allowed_sorted, ensure_ascii=True)
+
+    parts: list[str] = []
+    parts.append(
+        """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoML Launchpad</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #050b18;
+            --panel: #0f172a;
+            --panel-alt: #131c2e;
+            --accent: #5fe3c0;
+            --accent-strong: #38bdf8;
+            --text: #e6edf7;
+            --text-muted: #94a3b8;
+            --border: rgba(148, 163, 184, 0.25);
+            --shadow: rgba(7, 13, 28, 0.45);
+            --danger: #f87171;
+            --success: #34d399;
+        }
+        * {
+            box-sizing: border-box;
+        }
+        body.launch-body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: radial-gradient(circle at top, rgba(56, 189, 248, 0.15), transparent 50%), var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 40px 20px 80px;
+            min-height: 100vh;
+        }
+        .launch-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .hero {
+            background: var(--panel);
+            border-radius: 24px;
+            padding: 36px;
+            box-shadow: 0 24px 60px var(--shadow);
+            border: 1px solid var(--border);
+            margin-bottom: 28px;
+            position: relative;
+            overflow: hidden;
+        }
+        .hero::after {
+            content: "";
+            position: absolute;
+            width: 360px;
+            height: 360px;
+            border-radius: 50%;
+            right: -120px;
+            top: -160px;
+            background: radial-gradient(circle, rgba(95, 227, 192, 0.35), transparent 70%);
+        }
+        .hero-content {
+            position: relative;
+            z-index: 1;
+        }
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--accent);
+            background: rgba(95, 227, 192, 0.1);
+            border: 1px solid rgba(95, 227, 192, 0.35);
+            border-radius: 999px;
+            padding: 6px 14px;
+            margin-bottom: 18px;
+        }
+        .hero-title {
+            font-size: 2.4rem;
+            font-weight: 700;
+            margin: 0 0 12px;
+        }
+        .hero-text {
+            font-size: 1rem;
+            color: var(--text-muted);
+            max-width: 660px;
+            line-height: 1.6;
+        }
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-top: 28px;
+        }
+        .quick-card {
+            background: var(--panel-alt);
+            border-radius: 18px;
+            padding: 20px;
+            border: 1px solid var(--border);
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .quick-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(95, 227, 192, 0.5);
+        }
+        .quick-icon {
+            font-size: 1.6rem;
+            margin-bottom: 12px;
+        }
+        .quick-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .quick-text {
+            font-size: 0.92rem;
+            color: var(--text-muted);
+        }
+        .panel-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 24px;
+            margin-top: 30px;
+        }
+        .panel {
+            background: var(--panel);
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            box-shadow: 0 18px 45px rgba(7, 13, 28, 0.4);
+            display: flex;
+            flex-direction: column;
+        }
+        .panel-header {
+            padding: 24px 26px 6px;
+        }
+        .panel-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin: 0 0 6px;
+        }
+        .panel-subtitle {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin: 0;
+        }
+        .panel-body {
+            padding: 0 26px 26px;
+            flex: 1;
+        }
+        .upload-form {
+            border: 1px dashed var(--border);
+            border-radius: 12px;
+            padding: 28px;
+            text-align: center;
+            background: rgba(15, 23, 42, 0.35);
+        }
+        .upload-form input[type="file"] {
+            display: none;
+        }
+        .upload-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            color: var(--accent);
+            padding: 10px 18px;
+            border-radius: 10px;
+            border: 1px solid rgba(95, 227, 192, 0.35);
+            background: rgba(95, 227, 192, 0.08);
+            cursor: pointer;
+        }
+        .form-grid {
+            display: grid;
+            gap: 14px;
+        }
+        label.form-label {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            display: inline-block;
+        }
+        input.form-control,
+        select.form-control,
+        textarea.form-control {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px 12px;
+            color: var(--text);
+            font-size: 0.95rem;
+        }
+        textarea.form-control {
+            min-height: 96px;
+            resize: vertical;
+        }
+        button.primary-btn {
+            border: none;
+            border-radius: 12px;
+            padding: 12px 18px;
+            font-weight: 600;
+            background: linear-gradient(135deg, rgba(95, 227, 192, 0.85), rgba(56, 189, 248, 0.85));
+            color: #04111f;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        button.primary-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(95, 227, 192, 0.25);
+        }
+        button.secondary-btn {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px 16px;
+            font-weight: 600;
+            background: rgba(19, 28, 46, 0.6);
+            color: var(--text);
+            cursor: pointer;
+        }
+        .dataset-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        .dataset-table thead {
+            background: rgba(11, 18, 34, 0.8);
+        }
+        .dataset-table th,
+        .dataset-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+        }
+        .dataset-table tbody tr:hover {
+            background: rgba(56, 189, 248, 0.08);
+        }
+        .dataset-table button {
+            background: none;
+            border: none;
+            color: var(--accent);
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .toast {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            min-width: 260px;
+            padding: 14px 18px;
+            border-radius: 12px;
+            border: 1px solid transparent;
+            font-size: 0.95rem;
+            z-index: 2000;
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
+            opacity: 0;
+            transform: translateY(-12px);
+            transition: opacity 0.25s ease, transform 0.25s ease;
+        }
+        .toast.is-visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .toast.info {
+            background: rgba(56, 189, 248, 0.12);
+            border-color: rgba(56, 189, 248, 0.35);
+            color: var(--accent-strong);
+        }
+        .toast.success {
+            background: rgba(52, 211, 153, 0.12);
+            border-color: rgba(52, 211, 153, 0.35);
+            color: var(--success);
+        }
+        .toast.error {
+            background: rgba(248, 113, 113, 0.12);
+            border-color: rgba(248, 113, 113, 0.35);
+            color: var(--danger);
+        }
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .checkbox-row input {
+            width: auto;
+        }
+        .panel-actions {
+            margin-top: 18px;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .hero-actions {
+            margin-top: 28px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+        }
+        .primary-link,
+        .secondary-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            padding: 12px 18px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        }
+        .primary-link {
+            background: linear-gradient(135deg, rgba(95, 227, 192, 0.85), rgba(56, 189, 248, 0.85));
+            color: #04111f;
+        }
+        .primary-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(95, 227, 192, 0.25);
+        }
+        .secondary-link {
+            border: 1px solid var(--border);
+            background: rgba(19, 28, 46, 0.6);
+            color: var(--text);
+        }
+        .secondary-link:hover {
+            border-color: rgba(95, 227, 192, 0.45);
+        }
+        @media (max-width: 768px) {
+            body.launch-body {
+                padding: 24px 16px 60px;
+            }
+            .hero {
+                padding: 28px;
+            }
+            .panel-header {
+                padding: 20px 20px 4px;
+            }
+            .panel-body {
+                padding: 0 20px 20px;
+            }
+        }
+    </style>
+</head>
+<body class="launch-body">
+    <div class="launch-container">
+        <div class="hero">
+            <div class="hero-content">
+                <div class="hero-badge">🚀 AutoML Control Room</div>
+                <h1 class="hero-title">Kickstart your resource-aware AutoML run</h1>
+"""
+    )
+
+    parts.append(
+        f"                <p class=\"hero-text\">Upload datasets, capture deployment constraints, and launch experiments from a single start page. Allowed formats: {html.escape(allowed_display)}.</p>\n"
+    )
+
+    if has_result:
+        parts.append(
+            "                <div class=\"hero-actions\">\n"
+            "                    <a class=\"primary-link\" href=\"/?view=dashboard\">View latest dashboard</a>\n"
+            "                </div>\n"
+        )
+
+    parts.append(
+        """
+                <div class="quick-actions">
+                    <div class="quick-card">
+                        <div class="quick-icon">📂</div>
+                        <div class="quick-title">Upload Dataset</div>
+                        <div class="quick-text">Add CSV, Excel, JSON, or Parquet files and preview schema instantly.</div>
+                    </div>
+                    <div class="quick-card">
+                        <div class="quick-icon">🛠️</div>
+                        <div class="quick-title">Adjust Settings</div>
+                        <div class="quick-text">Tune training time budgets, RAM ceilings, and accuracy thresholds.</div>
+                    </div>
+                    <div class="quick-card">
+                        <div class="quick-icon">🤖</div>
+                        <div class="quick-title">Run AutoML</div>
+                        <div class="quick-text">Pick a dataset, choose the target column, and generate the decision dashboard.</div>
+                    </div>
+                    <div class="quick-card">
+                        <div class="quick-icon">📘</div>
+                        <div class="quick-title">Need a sample?</div>
+                        <div class="quick-text">Run python examples/run_example.py for a ready-made walk-through.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel-grid">
+            <section class="panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">1. Upload and review datasets</h2>
+                    <p class="panel-subtitle">Store files in the workspace uploads/ folder to make them selectable for AutoML runs.</p>
+                </div>
+                <div class="panel-body">
+                    <form id="uploadForm" class="upload-form">
+                        <p style="margin-bottom:18px; font-weight:600;">Drop a dataset file or browse</p>
+                        <label class="upload-btn" for="datasetFile">Choose file</label>
+                        <input type="file" id="datasetFile" name="datasetFile" accept=".csv,.xlsx,.xls,.json,.parquet">
+                        <p style="margin-top:16px; font-size:0.85rem; color:var(--text-muted);">Each upload is validated for minimum rows, columns, and non-null data.</p>
+                        <div class="panel-actions" style="justify-content:center;">
+                            <button type="submit" class="primary-btn">Upload Dataset</button>
+                            <button type="button" id="refreshDatasetsBtn" class="secondary-btn">Refresh List</button>
+                        </div>
+                    </form>
+
+                    <div style="margin-top:26px;">
+                        <h3 style="margin:0 0 12px;font-size:1.05rem;">Uploaded datasets</h3>
+                        <div style="max-height:240px; overflow-y:auto; border:1px solid var(--border); border-radius:12px;">
+                            <table class="dataset-table">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Size</th>
+                                        <th>Modified</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="datasetTableBody">
+                                    <tr><td colspan="4" style="text-align:center; padding:22px; color:var(--text-muted);">No datasets uploaded yet.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">2. Configure AutoML run</h2>
+                    <p class="panel-subtitle">Pick dataset and target column, optionally override evaluation metrics, then launch.</p>
+                </div>
+                <div class="panel-body">
+                    <form id="runForm" class="form-grid" autocomplete="off">
+                        <div>
+                            <label class="form-label" for="runDatasetSelect">Dataset</label>
+                            <select id="runDatasetSelect" class="form-control">
+                                <option value="">No datasets available</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label" for="runTargetSelect">Target column</label>
+                            <select id="runTargetSelect" class="form-control" disabled>
+                                <option value="">Select a dataset first</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label" for="runMetrics">Primary metrics (comma separated)</label>
+                            <input id="runMetrics" class="form-control" placeholder="accuracy, f1, roc_auc">
+                        </div>
+                        <div class="panel-actions">
+                            <button type="submit" class="primary-btn">Run AutoML</button>
+                            <button type="button" id="clearRunForm" class="secondary-btn">Reset</button>
+                        </div>
+                    </form>
+                </div>
+            </section>
+        </div>
+
+        <section class="panel" style="margin-top:28px;">
+            <div class="panel-header">
+                <h2 class="panel-title">3. Resource & metric preferences</h2>
+                <p class="panel-subtitle">These values are saved between sessions and reused for each run.</p>
+            </div>
+            <div class="panel-body">
+                <form id="settingsForm" class="form-grid" autocomplete="off">
+                    <div>
+                        <label class="form-label" for="settingsCvFolds">Cross-validation folds</label>
+                        <input id="settingsCvFolds" class="form-control" type="number" min="2" placeholder="5">
+                    </div>
+                    <div>
+                        <label class="form-label" for="settingsMaxTime">Max training time (seconds)</label>
+                        <input id="settingsMaxTime" class="form-control" type="number" step="1" min="0" placeholder="60">
+                    </div>
+                    <div>
+                        <label class="form-label" for="settingsMaxRam">Max RAM (MB)</label>
+                        <input id="settingsMaxRam" class="form-control" type="number" step="1" min="0" placeholder="4096">
+                    </div>
+                    <div>
+                        <label class="form-label" for="settingsMinPerf">Minimum performance (primary metric)</label>
+                        <input id="settingsMinPerf" class="form-control" type="number" step="0.001" min="0" placeholder="0.85">
+                    </div>
+                    <div class="checkbox-row">
+                        <input id="settingsInterpretability" type="checkbox">
+                        <label class="form-label" style="margin-bottom:0; text-transform:none; letter-spacing:0;" for="settingsInterpretability">Require interpretable models</label>
+                    </div>
+                    <div>
+                        <label class="form-label" for="settingsPreferredMetrics">Preferred metrics (comma separated)</label>
+                        <input id="settingsPreferredMetrics" class="form-control" placeholder="accuracy">
+                    </div>
+                    <div>
+                        <label class="form-label" for="settingsMetrics">Evaluation metrics (comma separated)</label>
+                        <input id="settingsMetrics" class="form-control" placeholder="accuracy, f1, roc_auc">
+                    </div>
+                    <div class="panel-actions">
+                        <button type="submit" class="primary-btn">Save Settings</button>
+                        <button type="button" id="resetSettings" class="secondary-btn">Restore Defaults</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+    </div>
+
+    <div id="toast" class="toast"></div>
+"""
+    )
+
+    parts.append("<script>\n")
+    parts.append(f"        const bootstrapSettings = {settings_json};\n")
+    parts.append(f"        const allowedExtensions = {allowed_json};\n")
+    parts.append(
+        """
+        let currentSettings = JSON.parse(JSON.stringify(bootstrapSettings));
+
+        const toastEl = document.getElementById('toast');
+        const datasetTableBody = document.getElementById('datasetTableBody');
+        const datasetSelect = document.getElementById('runDatasetSelect');
+        const targetSelect = document.getElementById('runTargetSelect');
+        const runMetricsInput = document.getElementById('runMetrics');
+
+        function showToast(message, variant = 'info') {
+            if (!toastEl) return;
+            toastEl.textContent = message;
+            toastEl.className = `toast ${variant}`;
+            requestAnimationFrame(() => toastEl.classList.add('is-visible'));
+            setTimeout(() => toastEl.classList.remove('is-visible'), 3200);
+        }
+
+        function formatBytes(bytes) {
+            if (!Number.isFinite(bytes)) return '—';
+            if (bytes === 0) return '0 B';
+            const units = ['B', 'KB', 'MB', 'GB'];
+            const idx = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+            const value = bytes / Math.pow(1024, idx);
+            return `${value.toFixed(idx === 0 ? 0 : 1)} ${units[idx]}`;
+        }
+
+        function formatTimestamp(seconds) {
+            if (!Number.isFinite(seconds)) return '—';
+            const date = new Date(seconds * 1000);
+            return date.toLocaleString();
+        }
+
+        function parseListInput(value) {
+            if (!value) return [];
+            return value
+                .split(',')
+                .map((item) => item.trim())
+                .filter(Boolean);
+        }
+
+        function populateSettingsForm(settings) {
+            const constraints = settings.constraints || {};
+            document.getElementById('settingsCvFolds').value = settings.cv_folds ?? '';
+            document.getElementById('settingsMaxTime').value = constraints.max_training_time ?? '';
+            document.getElementById('settingsMaxRam').value = constraints.max_ram_mb ?? '';
+            document.getElementById('settingsMinPerf').value = constraints.min_performance ?? '';
+            document.getElementById('settingsInterpretability').checked = Boolean(constraints.interpretability_required);
+            document.getElementById('settingsPreferredMetrics').value = (constraints.preferred_metrics || []).join(', ');
+            document.getElementById('settingsMetrics').value = (settings.metrics || []).join(', ');
+            runMetricsInput.value = (settings.metrics || []).join(', ');
+        }
+
+        function serializeSettingsForm() {
+            const formData = {
+                cv_folds: document.getElementById('settingsCvFolds').value,
+                metrics: document.getElementById('settingsMetrics').value,
+                constraints: {
+                    max_training_time: document.getElementById('settingsMaxTime').value,
+                    max_ram_mb: document.getElementById('settingsMaxRam').value,
+                    min_performance: document.getElementById('settingsMinPerf').value,
+                    interpretability_required: document.getElementById('settingsInterpretability').checked,
+                    preferred_metrics: document.getElementById('settingsPreferredMetrics').value,
+                },
+            };
+
+            if (formData.cv_folds !== '') {
+                formData.cv_folds = Number(formData.cv_folds);
+            }
+            formData.metrics = parseListInput(formData.metrics);
+            formData.constraints.max_training_time = formData.constraints.max_training_time === '' ? null : Number(formData.constraints.max_training_time);
+            formData.constraints.max_ram_mb = formData.constraints.max_ram_mb === '' ? null : Number(formData.constraints.max_ram_mb);
+            formData.constraints.min_performance = formData.constraints.min_performance === '' ? null : Number(formData.constraints.min_performance);
+            formData.constraints.preferred_metrics = parseListInput(formData.constraints.preferred_metrics);
+            return formData;
+        }
+
+        function renderDatasetTable(datasets) {
+            if (!datasetTableBody) return;
+            if (!datasets.length) {
+                datasetTableBody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:22px; color:var(--text-muted);">No datasets uploaded yet.</td></tr>';
+                return;
+            }
+            datasetTableBody.innerHTML = datasets
+                .map((item) => {
+                    return `<tr data-dataset="${item.name}">
+                        <td>${item.name}</td>
+                        <td>${formatBytes(item.size)}</td>
+                        <td>${formatTimestamp(item.modified)}</td>
+                        <td><button type="button" data-select-dataset="${item.name}">Select</button></td>
+                    </tr>`;
+                })
+                .join('');
+        }
+
+        function updateDatasetOptions(datasets) {
+            if (!datasetSelect) return;
+            if (!datasets.length) {
+                datasetSelect.innerHTML = '<option value="">No datasets available</option>';
+                datasetSelect.disabled = true;
+                targetSelect.innerHTML = '<option value="">Select a dataset first</option>';
+                targetSelect.disabled = true;
+                return;
+            }
+            datasetSelect.disabled = false;
+            datasetSelect.innerHTML = datasets
+                .map((item) => `<option value="${item.name}">${item.name}</option>`)
+                .join('');
+            datasetSelect.dispatchEvent(new Event('change'));
+        }
+
+        async function hydrateSettings() {
+            try {
+                const response = await fetch('/api/settings');
+                if (!response.ok) throw new Error('Failed to load settings');
+                const payload = await response.json();
+                if (payload.settings) {
+                    currentSettings = payload.settings;
+                    populateSettingsForm(currentSettings);
+                }
+            } catch (error) {
+                showToast(error.message || 'Unable to load settings', 'error');
+            }
+        }
+
+        async function refreshDatasets() {
+            try {
+                const response = await fetch('/api/datasets');
+                if (!response.ok) throw new Error('Failed to list datasets');
+                const payload = await response.json();
+                const datasets = payload.datasets || [];
+                renderDatasetTable(datasets);
+                updateDatasetOptions(datasets);
+            } catch (error) {
+                showToast(error.message || 'Dataset refresh failed', 'error');
+            }
+        }
+
+        async function loadDatasetColumns(datasetName) {
+            if (!datasetName) return;
+            targetSelect.innerHTML = '<option value="">Loading columns...</option>';
+            targetSelect.disabled = true;
+            try {
+                const response = await fetch(`/api/datasets/${encodeURIComponent(datasetName)}`);
+                if (!response.ok) throw new Error('Failed to inspect dataset');
+                const payload = await response.json();
+                const columns = (payload.preview && payload.preview.columns) || [];
+                if (!columns.length) {
+                    targetSelect.innerHTML = '<option value="">No columns detected</option>';
+                    targetSelect.disabled = true;
+                    return;
+                }
+                targetSelect.disabled = false;
+                targetSelect.innerHTML = columns
+                    .map((col) => `<option value="${col}">${col}</option>`)
+                    .join('');
+            } catch (error) {
+                targetSelect.innerHTML = '<option value="">Unable to load columns</option>';
+                targetSelect.disabled = true;
+                showToast(error.message || 'Column lookup failed', 'error');
+            }
+        }
+
+        async function handleSettingsSubmit(event) {
+            event.preventDefault();
+            const payload = serializeSettingsForm();
+            try {
+                const response = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!response.ok) throw new Error('Unable to save settings');
+                const data = await response.json();
+                currentSettings = data.settings || payload;
+                populateSettingsForm(currentSettings);
+                showToast('Settings saved', 'success');
+            } catch (error) {
+                showToast(error.message || 'Settings save failed', 'error');
+            }
+        }
+
+        async function handleUploadSubmit(event) {
+            event.preventDefault();
+            const fileInput = document.getElementById('datasetFile');
+            if (!fileInput || !fileInput.files || !fileInput.files.length) {
+                showToast('Select a dataset file first', 'error');
+                return;
+            }
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            try {
+                const response = await fetch('/api/upload', { method: 'POST', body: formData });
+                const result = await response.json();
+                if (!response.ok || !result.success) {
+                    throw new Error(result.error || 'Upload failed');
+                }
+                showToast(result.message || 'Dataset uploaded', 'success');
+                fileInput.value = '';
+                await refreshDatasets();
+            } catch (error) {
+                showToast(error.message || 'Upload failed', 'error');
+            }
+        }
+
+        async function handleRunSubmit(event) {
+            event.preventDefault();
+            const datasetName = datasetSelect.value;
+            const target = targetSelect.value;
+            if (!datasetName) {
+                showToast('Choose a dataset before running AutoML', 'error');
+                return;
+            }
+            if (!target) {
+                showToast('Select a target column', 'error');
+                return;
+            }
+            const metrics = parseListInput(runMetricsInput.value);
+            const payload = {
+                dataset: datasetName,
+                target,
+                metrics,
+            };
+            try {
+                const response = await fetch('/api/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'AutoML run failed');
+                }
+                showToast(data.message || 'AutoML run complete', 'success');
+                setTimeout(() => {
+                    window.location.href = data.redirect || '/';
+                }, 1200);
+            } catch (error) {
+                showToast(error.message || 'AutoML run failed', 'error');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            populateSettingsForm(currentSettings);
+            hydrateSettings();
+            refreshDatasets();
+            document.getElementById('settingsForm').addEventListener('submit', handleSettingsSubmit);
+            document.getElementById('uploadForm').addEventListener('submit', handleUploadSubmit);
+            document.getElementById('refreshDatasetsBtn').addEventListener('click', refreshDatasets);
+            document.getElementById('runForm').addEventListener('submit', handleRunSubmit);
+            document.getElementById('clearRunForm').addEventListener('click', () => {
+                runMetricsInput.value = (currentSettings.metrics || []).join(', ');
+            });
+            document.getElementById('resetSettings').addEventListener('click', () => {
+                currentSettings = JSON.parse(JSON.stringify(bootstrapSettings));
+                populateSettingsForm(currentSettings);
+                showToast('Defaults restored. Remember to save.', 'info');
+            });
+            datasetSelect.addEventListener('change', (event) => {
+                const selected = event.target.value;
+                if (selected) {
+                    loadDatasetColumns(selected);
+                }
+            });
+            if (datasetTableBody) {
+                datasetTableBody.addEventListener('click', (event) => {
+                    const trigger = event.target.closest('[data-select-dataset]');
+                    if (!trigger) return;
+                    const datasetName = trigger.getAttribute('data-select-dataset');
+                    datasetSelect.value = datasetName;
+                    datasetSelect.dispatchEvent(new Event('change'));
+                    showToast(`Dataset ${datasetName} selected`, 'info');
+                });
+            }
+        });
+    </script>
+</body>
+</html>
+"""
+    )
+
+    return "".join(parts)
 
 
 def _build_html_dashboard(
@@ -1990,7 +3105,8 @@ def run_dashboard(result: AutoMLResult, host: str = "127.0.0.1", port: int = 500
     app = create_app(result)
     print(f"\n{'=' * 60}")
     print("🚀 Starting AutoML Decision Dashboard")
-    print(f"📍 Access at: http://{host}:{port}")
+    print(f"📋 Launchpad: http://{host}:{port}/")
+    print(f"📊 Results:  http://{host}:{port}/?view=dashboard")
     print("⏹️  Press Ctrl+C to stop the server")
     print(f"{'=' * 60}\n")
     app.run(host=host, port=port, debug=debug, use_reloader=False)
