@@ -1,0 +1,17 @@
+{
+  "cv_folds": 5,
+  "metrics": [
+    "accuracy",
+    "f1",
+    "roc_auc"
+  ],
+  "constraints": {
+    "max_training_time": 60.0,
+    "max_ram_mb": 470.0,
+    "min_performance": 0.85,
+    "interpretability_required": false,
+    "preferred_metrics": [
+      "accuracy"
+    ]
+  }
+}
