@@ -36,6 +36,9 @@ from .data_upload import (
 )
 
 
+SAMPLE_DATASET_FILENAME = "sample_breast_cancer.csv"
+
+
 DEFAULT_DASHBOARD_SETTINGS: dict[str, object] = {
     "cv_folds": 5,
     "metrics": ["accuracy", "f1", "roc_auc"],
@@ -124,6 +127,44 @@ def _unique_metrics(metrics: list[str]) -> list[str]:
     return unique
 
 
+def _ensure_sample_dataset(upload_dir: Path) -> bool:
+    """Make sure the preloaded sample dataset is available for the start page."""
+
+    sample_path = upload_dir / SAMPLE_DATASET_FILENAME
+    if sample_path.exists():
+        return True
+
+    try:
+        from sklearn.datasets import load_breast_cancer
+    except ImportError:
+        return False
+
+    try:
+        dataset = load_breast_cancer(as_frame=True)
+        if getattr(dataset, "frame", None) is not None:
+            frame = dataset.frame.copy()
+        else:
+            feature_names = getattr(dataset, "feature_names", None)
+            features = pd.DataFrame(dataset.data, columns=feature_names)
+            if features.empty:
+                features = pd.DataFrame(dataset.data)
+            frame = features.assign(target=dataset.target)
+
+        if "target" not in frame.columns:
+            frame = frame.assign(target=dataset.target)
+
+        frame.to_csv(sample_path, index=False)
+    except Exception:
+        if sample_path.exists():
+            try:
+                sample_path.unlink()
+            except OSError:
+                pass
+        return False
+
+    return True
+
+
 def _sanitize_settings_payload(
     base_settings: dict[str, object], payload: dict[str, object]
 ) -> dict[str, object]:
@@ -185,10 +226,13 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
     upload_folder = create_upload_folder()
+    upload_path = Path(upload_folder)
+    _ensure_sample_dataset(upload_path)
+
     app.config["UPLOAD_FOLDER"] = upload_folder
     app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB
 
-    settings_path = Path(upload_folder) / "settings.json"
+    settings_path = upload_path / "settings.json"
     try:
         raw_settings = json.loads(settings_path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
@@ -229,7 +273,18 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
 
             return _build_html_dashboard(leaderboard_df, resource_df, best_model, current)
 
-        return _build_start_page(get_settings(), sorted(ALLOWED_EXTENSIONS), has_result=has_result)
+        _ensure_sample_dataset(upload_path)
+        sample_dataset = (
+            SAMPLE_DATASET_FILENAME
+            if (upload_path / SAMPLE_DATASET_FILENAME).exists()
+            else None
+        )
+        return _build_start_page(
+            get_settings(),
+            sorted(ALLOWED_EXTENSIONS),
+            has_result=has_result,
+            sample_dataset=sample_dataset,
+        )
 
     @app.route("/api/leaderboard")
     def api_leaderboard():
@@ -827,11 +882,38 @@ def _build_start_page(
     settings: dict[str, object],
     allowed_extensions: list[str],
     has_result: bool = False,
+    sample_dataset: Optional[str] = None,
 ) -> str:
     allowed_sorted = sorted({ext.lower() for ext in allowed_extensions})
     allowed_display = ", ".join(allowed_sorted) if allowed_sorted else "n/a"
     settings_json = json.dumps(settings, ensure_ascii=True)
     allowed_json = json.dumps(allowed_sorted, ensure_ascii=True)
+
+    quick_sample_text = (
+        "Run python examples/run_example.py for a ready-made walk-through."
+        if sample_dataset is None
+        else f"Try the built-in sample dataset ({html.escape(sample_dataset)}) or upload your own."
+    )
+    quick_sample_copy = html.escape(quick_sample_text)
+
+    if sample_dataset:
+        sample_button_html = (
+            f'<button type="button" class="ghost-btn" id="useSampleDatasetBtn" '
+            f'data-sample-dataset="{html.escape(sample_dataset)}">Use sample dataset</button>'
+        )
+        sample_hint_block = (
+            f'<p class="field-hint">Sample dataset: {html.escape(sample_dataset)}. '
+            "Use it for a guided demo or switch to an uploaded file.</p>"
+        )
+    else:
+        sample_button_html = ""
+        sample_hint_block = ""
+
+    sample_dataset_json = json.dumps(sample_dataset) if sample_dataset else "null"
+    target_hint_block = (
+        '<p class="field-hint">Select the column that contains your target labels. '
+        'We auto-pick "target" when it exists.</p>'
+    )
 
     parts: list[str] = []
     parts.append(
@@ -952,6 +1034,69 @@ def _build_start_page(
             font-size: 0.92rem;
             color: var(--text-muted);
         }
+        .dataset-select-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .ghost-btn {
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            background: rgba(56, 189, 248, 0.12);
+            color: var(--accent-strong);
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .ghost-btn:hover {
+            border-color: rgba(56, 189, 248, 0.7);
+            transform: translateY(-1px);
+        }
+        .field-hint {
+            margin: 6px 0 0;
+            font-size: 0.82rem;
+            color: var(--text-muted);
+        }
+        .table-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .table-action-btn {
+            border: 1px solid var(--border);
+            background: rgba(15, 23, 42, 0.55);
+            color: var(--text);
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }
+        .table-action-btn:hover {
+            border-color: rgba(95, 227, 192, 0.4);
+            background: rgba(95, 227, 192, 0.12);
+        }
+        .table-action-btn.danger {
+            border-color: rgba(248, 113, 113, 0.45);
+            color: #fca5a5;
+        }
+        .table-action-btn.danger:hover {
+            border-color: rgba(248, 113, 113, 0.8);
+            background: rgba(248, 113, 113, 0.12);
+        }
+        .table-badge {
+            display: inline-flex;
+            margin-left: 6px;
+            padding: 2px 6px;
+            border-radius: 999px;
+            background: rgba(56, 189, 248, 0.18);
+            color: var(--accent-strong);
+            font-size: 0.68rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
         .panel-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -1041,10 +1186,32 @@ def _build_start_page(
             color: #04111f;
             cursor: pointer;
             transition: transform 0.2s ease, box-shadow 0.2s ease;
+            position: relative;
         }
         button.primary-btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 12px 30px rgba(95, 227, 192, 0.25);
+        }
+        button.primary-btn.is-loading {
+            pointer-events: none;
+            opacity: 0.8;
+        }
+        button.primary-btn.is-loading::after {
+            content: "";
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            width: 16px;
+            height: 16px;
+            margin-top: -8px;
+            border-radius: 50%;
+            border: 2px solid rgba(4, 17, 31, 0.35);
+            border-top-color: rgba(4, 17, 31, 0.75);
+            animation: launch-spinner 0.6s linear infinite;
+        }
+        @keyframes launch-spinner {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
         button.secondary-btn {
             border: 1px solid var(--border);
@@ -1197,7 +1364,7 @@ def _build_start_page(
         )
 
     parts.append(
-        """
+        f"""
                 <div class="quick-actions">
                     <div class="quick-card">
                         <div class="quick-icon">📂</div>
@@ -1217,7 +1384,7 @@ def _build_start_page(
                     <div class="quick-card">
                         <div class="quick-icon">📘</div>
                         <div class="quick-title">Need a sample?</div>
-                        <div class="quick-text">Run python examples/run_example.py for a ready-made walk-through.</div>
+                        <div class="quick-text">{quick_sample_copy}</div>
                     </div>
                 </div>
             </div>
@@ -1250,7 +1417,7 @@ def _build_start_page(
                                         <th>Name</th>
                                         <th>Size</th>
                                         <th>Modified</th>
-                                        <th></th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody id="datasetTableBody">
@@ -1271,22 +1438,27 @@ def _build_start_page(
                     <form id="runForm" class="form-grid" autocomplete="off">
                         <div>
                             <label class="form-label" for="runDatasetSelect">Dataset</label>
-                            <select id="runDatasetSelect" class="form-control">
-                                <option value="">No datasets available</option>
-                            </select>
+                            <div class="dataset-select-row">
+                                <select id="runDatasetSelect" class="form-control">
+                                    <option value="">No datasets available</option>
+                                </select>
+                                {sample_button_html}
+                            </div>
+                            {sample_hint_block}
                         </div>
                         <div>
                             <label class="form-label" for="runTargetSelect">Target column</label>
                             <select id="runTargetSelect" class="form-control" disabled>
                                 <option value="">Select a dataset first</option>
                             </select>
+                            {target_hint_block}
                         </div>
                         <div>
                             <label class="form-label" for="runMetrics">Primary metrics (comma separated)</label>
                             <input id="runMetrics" class="form-control" placeholder="accuracy, f1, roc_auc">
                         </div>
                         <div class="panel-actions">
-                            <button type="submit" class="primary-btn">Run AutoML</button>
+                            <button type="submit" id="runSubmitBtn" class="primary-btn">Run AutoML</button>
                             <button type="button" id="clearRunForm" class="secondary-btn">Reset</button>
                         </div>
                     </form>
@@ -1345,6 +1517,7 @@ def _build_start_page(
     parts.append("<script>\n")
     parts.append(f"        const bootstrapSettings = {settings_json};\n")
     parts.append(f"        const allowedExtensions = {allowed_json};\n")
+    parts.append(f"        const sampleDatasetName = {sample_dataset_json};\n")
     parts.append(
         """
         let currentSettings = JSON.parse(JSON.stringify(bootstrapSettings));
@@ -1354,6 +1527,11 @@ def _build_start_page(
         const datasetSelect = document.getElementById('runDatasetSelect');
         const targetSelect = document.getElementById('runTargetSelect');
         const runMetricsInput = document.getElementById('runMetrics');
+        const useSampleDatasetBtn = document.getElementById('useSampleDatasetBtn');
+        const runSubmitBtn = document.getElementById('runSubmitBtn');
+
+        let lastSelectedDataset = '';
+        let runButtonOriginalText = runSubmitBtn ? runSubmitBtn.textContent : '';
 
         function showToast(message, variant = 'info') {
             if (!toastEl) return;
@@ -1384,6 +1562,22 @@ def _build_start_page(
                 .split(',')
                 .map((item) => item.trim())
                 .filter(Boolean);
+        }
+
+        function setRunButtonLoading(isLoading) {
+            if (!runSubmitBtn) return;
+            if (isLoading) {
+                runButtonOriginalText = runSubmitBtn.textContent;
+                runSubmitBtn.classList.add('is-loading');
+                runSubmitBtn.textContent = 'Running...';
+                runSubmitBtn.disabled = true;
+            } else {
+                runSubmitBtn.classList.remove('is-loading');
+                if (runButtonOriginalText) {
+                    runSubmitBtn.textContent = runButtonOriginalText;
+                }
+                runSubmitBtn.disabled = false;
+            }
         }
 
         function populateSettingsForm(settings) {
@@ -1430,11 +1624,21 @@ def _build_start_page(
             }
             datasetTableBody.innerHTML = datasets
                 .map((item) => {
+                    const isSample = Boolean(sampleDatasetName) && item.name === sampleDatasetName;
+                    const badge = isSample ? '<span class="table-badge">Sample</span>' : '';
+                    const deleteButton = isSample
+                        ? ''
+                        : `<button type="button" class="table-action-btn danger" data-delete-dataset="${item.name}">Delete</button>`;
                     return `<tr data-dataset="${item.name}">
-                        <td>${item.name}</td>
+                        <td>${item.name}${badge}</td>
                         <td>${formatBytes(item.size)}</td>
                         <td>${formatTimestamp(item.modified)}</td>
-                        <td><button type="button" data-select-dataset="${item.name}">Select</button></td>
+                        <td>
+                            <div class="table-actions">
+                                <button type="button" class="table-action-btn" data-select-dataset="${item.name}">Select</button>
+                                ${deleteButton}
+                            </div>
+                        </td>
                     </tr>`;
                 })
                 .join('');
@@ -1447,20 +1651,35 @@ def _build_start_page(
                 datasetSelect.disabled = true;
                 targetSelect.innerHTML = '<option value="">Select a dataset first</option>';
                 targetSelect.disabled = true;
+                lastSelectedDataset = '';
                 return;
             }
             datasetSelect.disabled = false;
             datasetSelect.innerHTML = datasets
                 .map((item) => `<option value="${item.name}">${item.name}</option>`)
                 .join('');
+
+            const datasetNames = datasets.map((item) => item.name);
+            let nextSelection = '';
+
+            if (lastSelectedDataset && datasetNames.includes(lastSelectedDataset)) {
+                nextSelection = lastSelectedDataset;
+            } else if (sampleDatasetName && datasetNames.includes(sampleDatasetName)) {
+                nextSelection = sampleDatasetName;
+            } else {
+                nextSelection = datasetNames[0] || '';
+            }
+
+            datasetSelect.value = nextSelection;
+            lastSelectedDataset = nextSelection;
             datasetSelect.dispatchEvent(new Event('change'));
         }
 
         async function hydrateSettings() {
             try {
                 const response = await fetch('/api/settings');
-                if (!response.ok) throw new Error('Failed to load settings');
-                const payload = await response.json();
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(payload.error || 'Failed to load settings');
                 if (payload.settings) {
                     currentSettings = payload.settings;
                     populateSettingsForm(currentSettings);
@@ -1473,13 +1692,40 @@ def _build_start_page(
         async function refreshDatasets() {
             try {
                 const response = await fetch('/api/datasets');
-                if (!response.ok) throw new Error('Failed to list datasets');
-                const payload = await response.json();
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(payload.error || 'Failed to list datasets');
                 const datasets = payload.datasets || [];
                 renderDatasetTable(datasets);
                 updateDatasetOptions(datasets);
             } catch (error) {
                 showToast(error.message || 'Dataset refresh failed', 'error');
+            }
+        }
+
+        async function deleteDataset(name) {
+            if (!name) return;
+            const confirmed = window.confirm(`Delete dataset "${name}"?`);
+            if (!confirmed) return;
+            try {
+                const response = await fetch(`/api/datasets/${encodeURIComponent(name)}`, { method: 'DELETE' });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || !payload.success) {
+                    throw new Error(payload.error || 'Dataset delete failed');
+                }
+                showToast(payload.message || 'Dataset deleted', 'success');
+                if (lastSelectedDataset === name) {
+                    lastSelectedDataset = '';
+                    if (datasetSelect) {
+                        datasetSelect.value = '';
+                    }
+                    if (targetSelect) {
+                        targetSelect.innerHTML = '<option value="">Select a dataset first</option>';
+                        targetSelect.disabled = true;
+                    }
+                }
+                await refreshDatasets();
+            } catch (error) {
+                showToast(error.message || 'Dataset delete failed', 'error');
             }
         }
 
@@ -1489,8 +1735,8 @@ def _build_start_page(
             targetSelect.disabled = true;
             try {
                 const response = await fetch(`/api/datasets/${encodeURIComponent(datasetName)}`);
-                if (!response.ok) throw new Error('Failed to inspect dataset');
-                const payload = await response.json();
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(payload.error || 'Failed to inspect dataset');
                 const columns = (payload.preview && payload.preview.columns) || [];
                 if (!columns.length) {
                     targetSelect.innerHTML = '<option value="">No columns detected</option>';
@@ -1501,6 +1747,23 @@ def _build_start_page(
                 targetSelect.innerHTML = columns
                     .map((col) => `<option value="${col}">${col}</option>`)
                     .join('');
+
+                const preferredTargets = ['target', 'label', 'labels', 'class', 'outcome', 'y'];
+                let defaultTarget = '';
+                for (const columnName of columns) {
+                    const normalized = columnName.trim().toLowerCase();
+                    if (preferredTargets.includes(normalized)) {
+                        defaultTarget = columnName;
+                        break;
+                    }
+                }
+                if (!defaultTarget && columns.length) {
+                    defaultTarget = columns[columns.length - 1];
+                }
+
+                if (defaultTarget) {
+                    targetSelect.value = defaultTarget;
+                }
             } catch (error) {
                 targetSelect.innerHTML = '<option value="">Unable to load columns</option>';
                 targetSelect.disabled = true;
@@ -1517,8 +1780,8 @@ def _build_start_page(
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                 });
-                if (!response.ok) throw new Error('Unable to save settings');
-                const data = await response.json();
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(data.error || 'Unable to save settings');
                 currentSettings = data.settings || payload;
                 populateSettingsForm(currentSettings);
                 showToast('Settings saved', 'success');
@@ -1538,7 +1801,7 @@ def _build_start_page(
             formData.append('file', fileInput.files[0]);
             try {
                 const response = await fetch('/api/upload', { method: 'POST', body: formData });
-                const result = await response.json();
+                const result = await response.json().catch(() => ({}));
                 if (!response.ok || !result.success) {
                     throw new Error(result.error || 'Upload failed');
                 }
@@ -1568,22 +1831,28 @@ def _build_start_page(
                 target,
                 metrics,
             };
+            setRunButtonLoading(true);
+            showToast('AutoML run started. This may take a moment.', 'info');
+            let redirected = false;
             try {
                 const response = await fetch('/api/run', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                 });
-                const data = await response.json();
+                const data = await response.json().catch(() => ({}));
                 if (!response.ok || !data.success) {
                     throw new Error(data.error || 'AutoML run failed');
                 }
-                showToast(data.message || 'AutoML run complete', 'success');
-                setTimeout(() => {
-                    window.location.href = data.redirect || '/';
-                }, 1200);
+                showToast(data.message || 'AutoML run complete. Redirecting to dashboard.', 'success');
+                redirected = true;
+                window.location.assign(data.redirect || '/?view=dashboard');
             } catch (error) {
                 showToast(error.message || 'AutoML run failed', 'error');
+            } finally {
+                if (!redirected) {
+                    setRunButtonLoading(false);
+                }
             }
         }
 
@@ -1605,18 +1874,50 @@ def _build_start_page(
             });
             datasetSelect.addEventListener('change', (event) => {
                 const selected = event.target.value;
+                lastSelectedDataset = selected || '';
                 if (selected) {
                     loadDatasetColumns(selected);
+                } else {
+                    targetSelect.innerHTML = '<option value="">Select a dataset first</option>';
+                    targetSelect.disabled = true;
                 }
             });
             if (datasetTableBody) {
                 datasetTableBody.addEventListener('click', (event) => {
-                    const trigger = event.target.closest('[data-select-dataset]');
-                    if (!trigger) return;
-                    const datasetName = trigger.getAttribute('data-select-dataset');
-                    datasetSelect.value = datasetName;
+                    const selectTrigger = event.target.closest('[data-select-dataset]');
+                    if (selectTrigger) {
+                        const datasetName = selectTrigger.getAttribute('data-select-dataset');
+                        datasetSelect.value = datasetName;
+                        datasetSelect.dispatchEvent(new Event('change'));
+                        showToast(`Dataset ${datasetName} selected`, 'info');
+                        return;
+                    }
+                    const deleteTrigger = event.target.closest('[data-delete-dataset]');
+                    if (deleteTrigger) {
+                        const datasetName = deleteTrigger.getAttribute('data-delete-dataset');
+                        deleteDataset(datasetName);
+                    }
+                });
+            }
+            if (useSampleDatasetBtn) {
+                useSampleDatasetBtn.addEventListener('click', () => {
+                    if (!datasetSelect) {
+                        showToast('Dataset selector unavailable.', 'error');
+                        return;
+                    }
+                    if (!sampleDatasetName) {
+                        showToast('Sample dataset is unavailable.', 'error');
+                        return;
+                    }
+                    const optionExists = Array.from(datasetSelect.options).some((option) => option.value === sampleDatasetName);
+                    if (!optionExists) {
+                        showToast('Sample dataset not found. Refresh datasets to recreate it.', 'error');
+                        return;
+                    }
+                    datasetSelect.value = sampleDatasetName;
+                    lastSelectedDataset = sampleDatasetName;
                     datasetSelect.dispatchEvent(new Event('change'));
-                    showToast(`Dataset ${datasetName} selected`, 'info');
+                    showToast(`Sample dataset ${sampleDatasetName} selected`, 'info');
                 });
             }
         });

@@ -26,6 +26,19 @@ def create_upload_folder(base_path: Optional[str] = None) -> str:
     return str(base_path)
 
 
+def _coerce_json_value(value):
+    if isinstance(value, dict):
+        return {str(key): _coerce_json_value(val) for key, val in value.items()}
+    if isinstance(value, list):
+        return [_coerce_json_value(item) for item in value]
+    if hasattr(value, "item") and callable(getattr(value, "item")):
+        try:
+            return getattr(value, "item")()
+        except Exception:
+            return value
+    return value
+
+
 def load_dataset(file_path: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """
     Load dataset from file.
@@ -58,14 +71,15 @@ def load_dataset(file_path: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]
 
 def get_dataset_preview(df: pd.DataFrame, rows: int = 5) -> dict:
     """Get preview of dataset with basic statistics."""
-    return {
-        'shape': df.shape,
+    preview = {
+        'shape': tuple(int(x) for x in df.shape),
         'columns': df.columns.tolist(),
-        'dtypes': df.dtypes.to_dict(),
+        'dtypes': df.dtypes.astype(str).to_dict(),
         'head': df.head(rows).to_dict(orient='records'),
         'missing_values': df.isnull().sum().to_dict(),
         'numeric_summary': df.describe().to_dict() if len(df.select_dtypes(include=['number']).columns) > 0 else {},
     }
+    return _coerce_json_value(preview)
 
 
 def validate_dataset(df: pd.DataFrame) -> Tuple[bool, Optional[str]]:
