@@ -1575,6 +1575,7 @@ def _build_start_page(
                 <span class="{status_badge_class}">{status_badge_copy}</span>
             </div>
         </header>
+        <div id="landingView">
         <section class="hero">
             <div class="hero-content">
                 <p class="hero-eyebrow">Launch in minutes</p>
@@ -1588,8 +1589,8 @@ def _build_start_page(
 
     parts.append(
         "                <div class=\"hero-actions\">\n"
-        "                    <a class=\"primary-link\" href=\"#runForm\">Configure run</a>\n"
-        "                    <a class=\"secondary-link\" href=\"#settingsForm\">Adjust preferences</a>\n"
+        "                    <a class=\"primary-link\" href=\"javascript:showAutoMLView()\">Open AutoML</a>\n"
+        "                    <a class=\"secondary-link\" href=\"javascript:showSettingsView()\">Adjust preferences</a>\n"
     )
 
     if has_result:
@@ -1638,6 +1639,9 @@ def _build_start_page(
         "                <div class=\"quick-text\">Share the generated dashboard, export the leaderboard, or download trained models once the run completes.</div>\n"
         "            </div>\n"
         "        </section>\n"
+        "        </div>\n"
+        "        <div id=\"automlView\" style=\"display:none;\">\n"
+        "        <div style=\"margin-bottom:20px;\"><a href=\"javascript:showLandingView()\" style=\"color:#00d4ff; cursor:pointer; text-decoration:none; font-weight:500;\">← Back to home</a></div>\n"
         "        <div class=\"panel-grid\">\n"
         "            <section class=\"panel\">\n"
         "                <div class=\"panel-header\">\n"
@@ -1711,7 +1715,9 @@ def _build_start_page(
         "                </div>\n"
         "            </section>\n"
         "        </div>\n"
-        "        <section class=\"panel\" style=\"margin-top:30px;\">\n"
+        "        </div>\n"
+        "        <div style=\"margin-bottom:20px; display:none;\" id=\"settingsBackBtn\"><a href=\"javascript:showLandingView()\" style=\"color:#00d4ff; cursor:pointer; text-decoration:none; font-weight:500;\">← Back to home</a></div>\n"
+        "        <section id=\"settingsView\" class=\"panel\" style=\"margin-top:30px; display:none;\">\n"
         "            <div class=\"panel-header\">\n"
         "                <h2 class=\"panel-title\">3. Resource & metric preferences</h2>\n"
         "                <p class=\"panel-subtitle\">Save constraint defaults once and reuse them across runs to keep experiments aligned with deployment goals.</p>\n"
@@ -2164,6 +2170,31 @@ def _build_start_page(
                 });
             }
         });
+
+        // View switching functions
+        function showAutoMLView() {
+            document.getElementById('landingView').style.display = 'none';
+            document.getElementById('automlView').style.display = 'block';
+            document.getElementById('settingsView').style.display = 'none';
+            document.getElementById('settingsBackBtn').style.display = 'none';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function showSettingsView() {
+            document.getElementById('landingView').style.display = 'none';
+            document.getElementById('automlView').style.display = 'none';
+            document.getElementById('settingsView').style.display = 'block';
+            document.getElementById('settingsBackBtn').style.display = 'block';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function showLandingView() {
+            document.getElementById('landingView').style.display = 'block';
+            document.getElementById('automlView').style.display = 'none';
+            document.getElementById('settingsView').style.display = 'none';
+            document.getElementById('settingsBackBtn').style.display = 'none';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
     </script>
 </body>
 </html>
