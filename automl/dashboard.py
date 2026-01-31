@@ -1572,6 +1572,7 @@ def _build_start_page(
                 </div>
             </div>
             <div class="header-right">
+                <a href="javascript:showSettingsView()" class="primary-link" id="preferencesBtn" style="display:none; margin:0; padding:6px 14px; border-radius:6px; font-size:0.9rem;\">Adjust preferences</a>
             </div>
         </header>
         <div id="landingView">
@@ -2176,6 +2177,7 @@ def _build_start_page(
             document.getElementById('automlView').style.display = 'block';
             document.getElementById('settingsView').style.display = 'none';
             document.getElementById('settingsBackBtn').style.display = 'none';
+            document.getElementById('preferencesBtn').style.display = 'block';
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
@@ -2183,7 +2185,8 @@ def _build_start_page(
             document.getElementById('landingView').style.display = 'none';
             document.getElementById('automlView').style.display = 'none';
             document.getElementById('settingsView').style.display = 'block';
-            document.getElementById('settingsBackBtn').style.display = 'block';
+            document.getElementById('settingsBackBtn').style.display = 'none';
+            document.getElementById('preferencesBtn').style.display = 'none';
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
@@ -2192,6 +2195,7 @@ def _build_start_page(
             document.getElementById('automlView').style.display = 'none';
             document.getElementById('settingsView').style.display = 'none';
             document.getElementById('settingsBackBtn').style.display = 'none';
+            document.getElementById('preferencesBtn').style.display = 'none';
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
     </script>
