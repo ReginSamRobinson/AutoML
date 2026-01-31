@@ -1572,7 +1572,6 @@ def _build_start_page(
                 </div>
             </div>
             <div class="header-right">
-                <span class="{status_badge_class}">{status_badge_copy}</span>
             </div>
         </header>
         <div id="landingView">
