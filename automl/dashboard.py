@@ -886,6 +886,7 @@ def _build_start_page(
 ) -> str:
     allowed_sorted = sorted({ext.lower() for ext in allowed_extensions})
     allowed_display = ", ".join(allowed_sorted) if allowed_sorted else "n/a"
+    allowed_display_html = html.escape(allowed_display)
     settings_json = json.dumps(settings, ensure_ascii=True)
     allowed_json = json.dumps(allowed_sorted, ensure_ascii=True)
 
@@ -895,6 +896,17 @@ def _build_start_page(
         else f"Try the built-in sample dataset ({html.escape(sample_dataset)}) or upload your own."
     )
     quick_sample_copy = html.escape(quick_sample_text)
+    status_badge_class = "status-badge is-live" if has_result else "status-badge"
+    status_badge_copy = (
+        "Latest dashboard ready"
+        if has_result
+        else "Awaiting first experiment"
+    )
+    status_badge_caption = (
+        "Jump back into your most recent AutoML run at any time."
+        if has_result
+        else "Complete the checklist below to launch your first experiment."
+    )
 
     if sample_dataset:
         sample_button_html = (
@@ -929,15 +941,21 @@ def _build_start_page(
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #050b18;
-            --panel: #0f172a;
-            --panel-alt: #131c2e;
-            --accent: #5fe3c0;
-            --accent-strong: #38bdf8;
-            --text: #e6edf7;
-            --text-muted: #94a3b8;
-            --border: rgba(148, 163, 184, 0.25);
-            --shadow: rgba(7, 13, 28, 0.45);
+            --bg: #020617;
+            --bg-glow: rgba(59, 130, 246, 0.22);
+            --panel: rgba(15, 23, 42, 0.88);
+            --panel-alt: rgba(17, 24, 39, 0.9);
+            --border: rgba(148, 163, 184, 0.18);
+            --border-strong: rgba(148, 163, 184, 0.35);
+            --accent: #38bdf8;
+            --accent-strong: #0ea5e9;
+            --accent-soft: rgba(14, 165, 233, 0.16);
+            --accent-contrast: #04111f;
+            --neutral-soft: rgba(100, 116, 139, 0.18);
+            --text: #e2e8f9;
+            --text-strong: #f8fafc;
+            --text-muted: #94a3c0;
+            --shadow: rgba(2, 6, 23, 0.6);
             --danger: #f87171;
             --success: #34d399;
         }
@@ -946,194 +964,306 @@ def _build_start_page(
         }
         body.launch-body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: radial-gradient(circle at top, rgba(56, 189, 248, 0.15), transparent 50%), var(--bg);
+            background: radial-gradient(120% 120% at 100% 0%, rgba(14, 165, 233, 0.12), transparent 60%),
+                radial-gradient(120% 120% at 0% 0%, rgba(59, 130, 246, 0.08), transparent 55%),
+                var(--bg);
             color: var(--text);
             margin: 0;
-            padding: 40px 20px 80px;
             min-height: 100vh;
+            padding: 52px 24px 96px;
         }
-        .launch-container {
-            max-width: 1200px;
+        body.launch-body::before {
+            content: "";
+            position: fixed;
+            inset: -20%;
+            background: radial-gradient(48% 48% at 80% 12%, rgba(56, 189, 248, 0.12), transparent 70%),
+                radial-gradient(52% 52% at 12% 12%, rgba(94, 234, 212, 0.12), transparent 75%);
+            filter: blur(32px);
+            opacity: 0.8;
+            pointer-events: none;
+        }
+        .launch-shell {
+            position: relative;
+            max-width: 1180px;
             margin: 0 auto;
         }
+        .launch-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+            padding: 0 8px;
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .brand-mark {
+            width: 48px;
+            height: 48px;
+            display: grid;
+            place-items: center;
+            border-radius: 14px;
+            font-weight: 700;
+            font-size: 1.05rem;
+            color: var(--accent-contrast);
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.95), rgba(94, 234, 212, 0.95));
+            box-shadow: 0 18px 32px rgba(14, 165, 233, 0.35);
+        }
+        .brand-copy {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .brand-name {
+            font-weight: 600;
+            letter-spacing: 0.03em;
+        }
+        .brand-subtitle {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            font-size: 0.87rem;
+            letter-spacing: 0.02em;
+            border: 1px solid var(--neutral-soft);
+            background: rgba(15, 23, 42, 0.7);
+            color: var(--text);
+        }
+        .status-badge::before {
+            content: "";
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: rgba(148, 163, 184, 0.8);
+            box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.15);
+        }
+        .status-badge.is-live {
+            border-color: rgba(56, 189, 248, 0.55);
+            background: rgba(13, 148, 136, 0.14);
+            color: #5ff2c4;
+        }
+        .status-badge.is-live::before {
+            background: #34d399;
+            box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.18);
+        }
         .hero {
-            background: var(--panel);
-            border-radius: 24px;
-            padding: 36px;
-            box-shadow: 0 24px 60px var(--shadow);
-            border: 1px solid var(--border);
-            margin-bottom: 28px;
             position: relative;
+            display: grid;
+            grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+            gap: 36px;
+            padding: 44px;
+            border-radius: 32px;
+            border: 1px solid var(--border);
+            background: linear-gradient(145deg, rgba(17, 24, 39, 0.92), rgba(15, 23, 42, 0.82));
+            box-shadow: 0 32px 60px var(--shadow);
             overflow: hidden;
+            margin-bottom: 36px;
         }
         .hero::after {
             content: "";
             position: absolute;
-            width: 360px;
-            height: 360px;
-            border-radius: 50%;
-            right: -120px;
-            top: -160px;
-            background: radial-gradient(circle, rgba(95, 227, 192, 0.35), transparent 70%);
+            inset: -40% 40% 35% -20%;
+            background: radial-gradient(circle at 30% 30%, rgba(14, 165, 233, 0.28), transparent 60%);
+            filter: blur(12px);
+            opacity: 0.7;
+            pointer-events: none;
         }
         .hero-content {
             position: relative;
             z-index: 1;
         }
-        .hero-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.85rem;
+        .hero-eyebrow {
+            font-size: 0.9rem;
             text-transform: uppercase;
-            letter-spacing: 0.12em;
-            color: var(--accent);
-            background: rgba(95, 227, 192, 0.1);
-            border: 1px solid rgba(95, 227, 192, 0.35);
-            border-radius: 999px;
-            padding: 6px 14px;
-            margin-bottom: 18px;
-        }
-        .hero-title {
-            font-size: 2.4rem;
-            font-weight: 700;
+            letter-spacing: 0.18em;
+            color: rgba(94, 234, 212, 0.85);
             margin: 0 0 12px;
         }
+        .hero-title {
+            margin: 0;
+            font-size: 2.6rem;
+            line-height: 1.15;
+            color: var(--text-strong);
+        }
         .hero-text {
-            font-size: 1rem;
+            margin: 18px 0 0;
+            max-width: 620px;
+            font-size: 1.05rem;
+            line-height: 1.7;
             color: var(--text-muted);
-            max-width: 660px;
+        }
+        .hero-actions {
+            margin-top: 32px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+        }
+        .hero-pill-row {
+            margin-top: 32px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .hero-pill {
+            padding: 8px 14px;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            background: rgba(15, 118, 110, 0.22);
+            color: rgba(94, 234, 212, 0.9);
+            border: 1px solid rgba(16, 185, 129, 0.28);
+        }
+        .hero-card {
+            position: relative;
+            z-index: 1;
+            border-radius: 24px;
+            border: 1px solid var(--border-strong);
+            background: rgba(10, 16, 30, 0.7);
+            padding: 28px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            backdrop-filter: blur(12px);
+        }
+        .hero-card-title {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .hero-card-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: grid;
+            gap: 12px;
+            color: var(--text-muted);
+        }
+        .hero-card-list li {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            padding: 12px;
+            border-radius: 14px;
+            background: rgba(15, 23, 42, 0.62);
+            border: 1px solid rgba(148, 163, 184, 0.12);
+        }
+        .hero-card-list li::before {
+            content: "✔";
+            font-size: 0.85rem;
+            color: rgba(94, 234, 212, 0.9);
+        }
+        .hero-card-note {
+            font-size: 0.9rem;
             line-height: 1.6;
+            color: var(--text-muted);
+            border-top: 1px solid rgba(148, 163, 184, 0.12);
+            padding-top: 14px;
         }
         .quick-actions {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 16px;
-            margin-top: 28px;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+            margin-bottom: 34px;
         }
         .quick-card {
-            background: var(--panel-alt);
-            border-radius: 18px;
-            padding: 20px;
-            border: 1px solid var(--border);
-            transition: transform 0.2s ease, border-color 0.2s ease;
+            position: relative;
+            border-radius: 22px;
+            padding: 24px;
+            background: rgba(15, 23, 42, 0.72);
+            border: 1px solid rgba(148, 163, 184, 0.15);
+            box-shadow: 0 18px 36px rgba(8, 11, 22, 0.4);
+            transition: transform 0.25s ease, border-color 0.25s ease;
+        }
+        .quick-card::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            opacity: 0;
+            background: linear-gradient(135deg, rgba(14, 165, 233, 0.18), transparent 55%);
+            transition: opacity 0.25s ease;
         }
         .quick-card:hover {
-            transform: translateY(-4px);
-            border-color: rgba(95, 227, 192, 0.5);
+            transform: translateY(-6px);
+            border-color: rgba(56, 189, 248, 0.45);
+        }
+        .quick-card:hover::after {
+            opacity: 1;
+        }
+        .quick-card > * {
+            position: relative;
+            z-index: 1;
         }
         .quick-icon {
-            font-size: 1.6rem;
-            margin-bottom: 12px;
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            display: grid;
+            place-items: center;
+            font-size: 1.35rem;
+            margin-bottom: 16px;
+            background: rgba(14, 165, 233, 0.16);
         }
         .quick-title {
             font-weight: 600;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
+            letter-spacing: 0.01em;
         }
         .quick-text {
-            font-size: 0.92rem;
+            font-size: 0.95rem;
             color: var(--text-muted);
-        }
-        .dataset-select-row {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        .ghost-btn {
-            border: 1px solid rgba(56, 189, 248, 0.4);
-            background: rgba(56, 189, 248, 0.12);
-            color: var(--accent-strong);
-            padding: 8px 14px;
-            border-radius: 10px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s ease, border-color 0.2s ease;
-        }
-        .ghost-btn:hover {
-            border-color: rgba(56, 189, 248, 0.7);
-            transform: translateY(-1px);
-        }
-        .field-hint {
-            margin: 6px 0 0;
-            font-size: 0.82rem;
-            color: var(--text-muted);
-        }
-        .table-actions {
-            display: flex;
-            gap: 8px;
-            justify-content: flex-end;
-        }
-        .table-action-btn {
-            border: 1px solid var(--border);
-            background: rgba(15, 23, 42, 0.55);
-            color: var(--text);
-            padding: 6px 12px;
-            border-radius: 8px;
-            font-size: 0.85rem;
-            cursor: pointer;
-            transition: background 0.2s ease, border-color 0.2s ease;
-        }
-        .table-action-btn:hover {
-            border-color: rgba(95, 227, 192, 0.4);
-            background: rgba(95, 227, 192, 0.12);
-        }
-        .table-action-btn.danger {
-            border-color: rgba(248, 113, 113, 0.45);
-            color: #fca5a5;
-        }
-        .table-action-btn.danger:hover {
-            border-color: rgba(248, 113, 113, 0.8);
-            background: rgba(248, 113, 113, 0.12);
-        }
-        .table-badge {
-            display: inline-flex;
-            margin-left: 6px;
-            padding: 2px 6px;
-            border-radius: 999px;
-            background: rgba(56, 189, 248, 0.18);
-            color: var(--accent-strong);
-            font-size: 0.68rem;
-            font-weight: 600;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
+            line-height: 1.6;
         }
         .panel-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 24px;
-            margin-top: 30px;
+            gap: 26px;
         }
         .panel {
             background: var(--panel);
-            border-radius: 20px;
+            border-radius: 26px;
             border: 1px solid var(--border);
-            box-shadow: 0 18px 45px rgba(7, 13, 28, 0.4);
+            box-shadow: 0 26px 55px rgba(5, 10, 25, 0.55);
             display: flex;
             flex-direction: column;
+            overflow: hidden;
         }
         .panel-header {
-            padding: 24px 26px 6px;
+            padding: 28px 30px 12px;
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(13, 23, 38, 0.78));
         }
         .panel-title {
-            font-size: 1.2rem;
-            font-weight: 600;
-            margin: 0 0 6px;
+            margin: 0;
+            font-size: 1.25rem;
         }
         .panel-subtitle {
-            font-size: 0.9rem;
+            margin: 10px 0 0;
+            font-size: 0.92rem;
             color: var(--text-muted);
-            margin: 0;
         }
         .panel-body {
-            padding: 0 26px 26px;
+            padding: 24px 30px 32px;
+            background: rgba(13, 19, 34, 0.88);
             flex: 1;
         }
         .upload-form {
-            border: 1px dashed var(--border);
-            border-radius: 12px;
-            padding: 28px;
+            border: 1px dashed rgba(148, 163, 184, 0.3);
+            border-radius: 18px;
+            padding: 32px;
             text-align: center;
-            background: rgba(15, 23, 42, 0.35);
+            background: rgba(10, 16, 28, 0.55);
         }
         .upload-form input[type="file"] {
             display: none;
@@ -1141,60 +1271,103 @@ def _build_start_page(
         .upload-btn {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
             font-weight: 600;
             color: var(--accent);
-            padding: 10px 18px;
-            border-radius: 10px;
-            border: 1px solid rgba(95, 227, 192, 0.35);
-            background: rgba(95, 227, 192, 0.08);
+            padding: 12px 20px;
+            border-radius: 12px;
+            border: 1px solid rgba(56, 189, 248, 0.45);
+            background: rgba(14, 165, 233, 0.12);
             cursor: pointer;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .upload-btn:hover {
+            transform: translateY(-2px);
+            border-color: rgba(56, 189, 248, 0.7);
         }
         .form-grid {
             display: grid;
-            gap: 14px;
+            gap: 18px;
         }
         label.form-label {
-            font-size: 0.85rem;
+            font-size: 0.82rem;
             text-transform: uppercase;
-            letter-spacing: 0.08em;
-            color: var(--text-muted);
-            margin-bottom: 6px;
+            letter-spacing: 0.11em;
+            color: rgba(148, 163, 184, 0.9);
+            margin-bottom: 10px;
             display: inline-block;
         }
         input.form-control,
         select.form-control,
         textarea.form-control {
             width: 100%;
-            background: rgba(15, 23, 42, 0.6);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 10px 12px;
+            background: rgba(9, 14, 24, 0.75);
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            border-radius: 14px;
+            padding: 12px 14px;
             color: var(--text);
-            font-size: 0.95rem;
+            font-size: 0.96rem;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        input.form-control:focus,
+        select.form-control:focus,
+        textarea.form-control:focus {
+            border-color: rgba(56, 189, 248, 0.65);
+            box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.2);
+            outline: none;
         }
         textarea.form-control {
             min-height: 96px;
             resize: vertical;
         }
+        .dataset-select-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .ghost-btn {
+            border: 1px solid rgba(56, 189, 248, 0.45);
+            background: rgba(8, 47, 73, 0.65);
+            color: rgba(125, 211, 252, 0.95);
+            padding: 9px 16px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .ghost-btn:hover {
+            transform: translateY(-1px);
+            border-color: rgba(56, 189, 248, 0.7);
+        }
+        .field-hint {
+            margin: 8px 0 0;
+            font-size: 0.82rem;
+            color: rgba(148, 163, 184, 0.82);
+        }
+        .panel-actions {
+            margin-top: 6px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
         button.primary-btn {
             border: none;
-            border-radius: 12px;
-            padding: 12px 18px;
+            border-radius: 14px;
+            padding: 12px 20px;
             font-weight: 600;
-            background: linear-gradient(135deg, rgba(95, 227, 192, 0.85), rgba(56, 189, 248, 0.85));
-            color: #04111f;
+            background: linear-gradient(135deg, rgba(14, 165, 233, 0.88), rgba(59, 130, 246, 0.88));
+            color: var(--accent-contrast);
             cursor: pointer;
             transition: transform 0.2s ease, box-shadow 0.2s ease;
             position: relative;
         }
         button.primary-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 12px 30px rgba(95, 227, 192, 0.25);
+            box-shadow: 0 18px 28px rgba(14, 165, 233, 0.28);
         }
         button.primary-btn.is-loading {
             pointer-events: none;
-            opacity: 0.8;
+            opacity: 0.75;
         }
         button.primary-btn.is-loading::after {
             content: "";
@@ -1205,22 +1378,26 @@ def _build_start_page(
             height: 16px;
             margin-top: -8px;
             border-radius: 50%;
-            border: 2px solid rgba(4, 17, 31, 0.35);
-            border-top-color: rgba(4, 17, 31, 0.75);
-            animation: launch-spinner 0.6s linear infinite;
+            border: 2px solid rgba(4, 17, 31, 0.4);
+            border-top-color: rgba(4, 17, 31, 0.7);
+            animation: launch-spinner 0.65s linear infinite;
         }
         @keyframes launch-spinner {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
         button.secondary-btn {
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 10px 16px;
+            border: 1px solid rgba(148, 163, 184, 0.32);
+            border-radius: 14px;
+            padding: 11px 18px;
             font-weight: 600;
-            background: rgba(19, 28, 46, 0.6);
+            background: rgba(12, 20, 33, 0.72);
             color: var(--text);
             cursor: pointer;
+            transition: border-color 0.2s ease;
+        }
+        button.secondary-btn:hover {
+            border-color: rgba(148, 163, 184, 0.55);
         }
         .dataset-table {
             width: 100%;
@@ -1228,290 +1405,356 @@ def _build_start_page(
             font-size: 0.9rem;
         }
         .dataset-table thead {
-            background: rgba(11, 18, 34, 0.8);
+            background: rgba(10, 16, 30, 0.72);
         }
         .dataset-table th,
         .dataset-table td {
-            padding: 10px 12px;
-            border-bottom: 1px solid var(--border);
+            padding: 12px 14px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.14);
             text-align: left;
         }
         .dataset-table tbody tr:hover {
-            background: rgba(56, 189, 248, 0.08);
+            background: rgba(14, 165, 233, 0.12);
         }
-        .dataset-table button {
-            background: none;
-            border: none;
-            color: var(--accent);
+        .table-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        .table-action-btn {
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            background: rgba(12, 20, 33, 0.78);
+            color: var(--text);
+            padding: 7px 12px;
+            border-radius: 10px;
+            font-size: 0.85rem;
             cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }
+        .table-action-btn:hover {
+            border-color: rgba(56, 189, 248, 0.45);
+            background: rgba(8, 47, 73, 0.78);
+        }
+        .table-action-btn.danger {
+            border-color: rgba(248, 113, 113, 0.45);
+            color: rgba(252, 165, 165, 0.95);
+        }
+        .table-action-btn.danger:hover {
+            border-color: rgba(248, 113, 113, 0.65);
+            background: rgba(68, 28, 36, 0.65);
+        }
+        .table-badge {
+            display: inline-flex;
+            margin-left: 8px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: rgba(14, 165, 233, 0.18);
+            color: rgba(125, 211, 252, 0.95);
+            font-size: 0.68rem;
             font-weight: 600;
-        }
-        .toast {
-            position: fixed;
-            top: 24px;
-            right: 24px;
-            min-width: 260px;
-            padding: 14px 18px;
-            border-radius: 12px;
-            border: 1px solid transparent;
-            font-size: 0.95rem;
-            z-index: 2000;
-            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
-            opacity: 0;
-            transform: translateY(-12px);
-            transition: opacity 0.25s ease, transform 0.25s ease;
-        }
-        .toast.is-visible {
-            opacity: 1;
-            transform: translateY(0);
-        }
-        .toast.info {
-            background: rgba(56, 189, 248, 0.12);
-            border-color: rgba(56, 189, 248, 0.35);
-            color: var(--accent-strong);
-        }
-        .toast.success {
-            background: rgba(52, 211, 153, 0.12);
-            border-color: rgba(52, 211, 153, 0.35);
-            color: var(--success);
-        }
-        .toast.error {
-            background: rgba(248, 113, 113, 0.12);
-            border-color: rgba(248, 113, 113, 0.35);
-            color: var(--danger);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
         }
         .checkbox-row {
             display: flex;
+            gap: 12px;
             align-items: center;
-            gap: 10px;
         }
         .checkbox-row input {
             width: auto;
-        }
-        .panel-actions {
-            margin-top: 18px;
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-        .hero-actions {
-            margin-top: 28px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 14px;
         }
         .primary-link,
         .secondary-link {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            border-radius: 12px;
-            padding: 12px 18px;
+            border-radius: 14px;
+            padding: 12px 20px;
             font-weight: 600;
             text-decoration: none;
             transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
         }
         .primary-link {
-            background: linear-gradient(135deg, rgba(95, 227, 192, 0.85), rgba(56, 189, 248, 0.85));
-            color: #04111f;
+            background: linear-gradient(135deg, rgba(14, 165, 233, 0.88), rgba(59, 130, 246, 0.88));
+            color: var(--accent-contrast);
         }
         .primary-link:hover {
             transform: translateY(-2px);
-            box-shadow: 0 12px 30px rgba(95, 227, 192, 0.25);
+            box-shadow: 0 18px 28px rgba(14, 165, 233, 0.28);
         }
         .secondary-link {
-            border: 1px solid var(--border);
-            background: rgba(19, 28, 46, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            background: rgba(11, 18, 34, 0.72);
             color: var(--text);
         }
         .secondary-link:hover {
-            border-color: rgba(95, 227, 192, 0.45);
+            border-color: rgba(56, 189, 248, 0.45);
         }
-        @media (max-width: 768px) {
+        .tertiary-link {
+            border: none;
+            background: transparent;
+            color: rgba(125, 211, 252, 0.95);
+            padding: 0;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: underline;
+            text-underline-offset: 6px;
+        }
+        .toast {
+            position: fixed;
+            top: 28px;
+            right: 32px;
+            min-width: 280px;
+            padding: 16px 20px;
+            border-radius: 16px;
+            border: 1px solid transparent;
+            font-size: 0.95rem;
+            z-index: 2000;
+            box-shadow: 0 18px 36px rgba(5, 10, 25, 0.55);
+            opacity: 0;
+            transform: translateY(-12px);
+            transition: opacity 0.25s ease, transform 0.25s ease;
+            backdrop-filter: blur(8px);
+        }
+        .toast.is-visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .toast.info {
+            background: rgba(14, 165, 233, 0.16);
+            border-color: rgba(56, 189, 248, 0.38);
+            color: rgba(125, 211, 252, 0.95);
+        }
+        .toast.success {
+            background: rgba(34, 197, 94, 0.18);
+            border-color: rgba(34, 197, 94, 0.35);
+            color: var(--success);
+        }
+        .toast.error {
+            background: rgba(248, 113, 113, 0.14);
+            border-color: rgba(248, 113, 113, 0.32);
+            color: var(--danger);
+        }
+        @media (max-width: 960px) {
             body.launch-body {
-                padding: 24px 16px 60px;
+                padding: 36px 16px 80px;
+            }
+            .hero {
+                grid-template-columns: 1fr;
+                padding: 36px;
+            }
+        }
+        @media (max-width: 640px) {
+            .launch-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 16px;
             }
             .hero {
                 padding: 28px;
             }
-            .panel-header {
-                padding: 20px 20px 4px;
-            }
+            .panel-header,
             .panel-body {
-                padding: 0 20px 20px;
+                padding-left: 20px;
+                padding-right: 20px;
             }
         }
     </style>
 </head>
 <body class="launch-body">
-    <div class="launch-container">
-        <div class="hero">
+    <div class="launch-shell">
+        <header class="launch-header">
+            <div class="brand">
+                <div class="brand-mark">RA</div>
+                <div class="brand-copy">
+                    <span class="brand-name">Resource Aware AutoML</span>
+                    <span class="brand-subtitle">Experiment Control Room</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <span class="{status_badge_class}">{status_badge_copy}</span>
+            </div>
+        </header>
+        <section class="hero">
             <div class="hero-content">
-                <div class="hero-badge">🚀 AutoML Control Room</div>
-                <h1 class="hero-title">Kickstart your resource-aware AutoML run</h1>
+                <p class="hero-eyebrow">Launch in minutes</p>
+                <h1 class="hero-title">Command center for resource-aware AutoML</h1>
 """
     )
 
     parts.append(
-        f"                <p class=\"hero-text\">Upload datasets, capture deployment constraints, and launch experiments from a single start page. Allowed formats: {html.escape(allowed_display)}.</p>\n"
+        f"                <p class=\"hero-text\">Upload datasets, capture deployment constraints, and launch experiments without leaving this workspace. Allowed formats: {allowed_display_html}.</p>\n"
+    )
+
+    parts.append(
+        "                <div class=\"hero-actions\">\n"
+        "                    <a class=\"primary-link\" href=\"#runForm\">Configure run</a>\n"
+        "                    <a class=\"secondary-link\" href=\"#settingsForm\">Adjust preferences</a>\n"
     )
 
     if has_result:
         parts.append(
-            "                <div class=\"hero-actions\">\n"
-            "                    <a class=\"primary-link\" href=\"/?view=dashboard\">View latest dashboard</a>\n"
-            "                </div>\n"
+            "                    <a class=\"secondary-link\" href=\"/?view=dashboard\">View latest dashboard</a>\n"
         )
 
     parts.append(
-        f"""
-                <div class="quick-actions">
-                    <div class="quick-card">
-                        <div class="quick-icon">📂</div>
-                        <div class="quick-title">Upload Dataset</div>
-                        <div class="quick-text">Add CSV, Excel, JSON, or Parquet files and preview schema instantly.</div>
-                    </div>
-                    <div class="quick-card">
-                        <div class="quick-icon">🛠️</div>
-                        <div class="quick-title">Adjust Settings</div>
-                        <div class="quick-text">Tune training time budgets, RAM ceilings, and accuracy thresholds.</div>
-                    </div>
-                    <div class="quick-card">
-                        <div class="quick-icon">🤖</div>
-                        <div class="quick-title">Run AutoML</div>
-                        <div class="quick-text">Pick a dataset, choose the target column, and generate the decision dashboard.</div>
-                    </div>
-                    <div class="quick-card">
-                        <div class="quick-icon">📘</div>
-                        <div class="quick-title">Need a sample?</div>
-                        <div class="quick-text">{quick_sample_copy}</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="panel-grid">
-            <section class="panel">
-                <div class="panel-header">
-                    <h2 class="panel-title">1. Upload and review datasets</h2>
-                    <p class="panel-subtitle">Store files in the workspace uploads/ folder to make them selectable for AutoML runs.</p>
-                </div>
-                <div class="panel-body">
-                    <form id="uploadForm" class="upload-form">
-                        <p style="margin-bottom:18px; font-weight:600;">Drop a dataset file or browse</p>
-                        <label class="upload-btn" for="datasetFile">Choose file</label>
-                        <input type="file" id="datasetFile" name="datasetFile" accept=".csv,.xlsx,.xls,.json,.parquet">
-                        <p style="margin-top:16px; font-size:0.85rem; color:var(--text-muted);">Each upload is validated for minimum rows, columns, and non-null data.</p>
-                        <div class="panel-actions" style="justify-content:center;">
-                            <button type="submit" class="primary-btn">Upload Dataset</button>
-                            <button type="button" id="refreshDatasetsBtn" class="secondary-btn">Refresh List</button>
-                        </div>
-                    </form>
-
-                    <div style="margin-top:26px;">
-                        <h3 style="margin:0 0 12px;font-size:1.05rem;">Uploaded datasets</h3>
-                        <div style="max-height:240px; overflow-y:auto; border:1px solid var(--border); border-radius:12px;">
-                            <table class="dataset-table">
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Size</th>
-                                        <th>Modified</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="datasetTableBody">
-                                    <tr><td colspan="4" style="text-align:center; padding:22px; color:var(--text-muted);">No datasets uploaded yet.</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <section class="panel">
-                <div class="panel-header">
-                    <h2 class="panel-title">2. Configure AutoML run</h2>
-                    <p class="panel-subtitle">Pick dataset and target column, optionally override evaluation metrics, then launch.</p>
-                </div>
-                <div class="panel-body">
-                    <form id="runForm" class="form-grid" autocomplete="off">
-                        <div>
-                            <label class="form-label" for="runDatasetSelect">Dataset</label>
-                            <div class="dataset-select-row">
-                                <select id="runDatasetSelect" class="form-control">
-                                    <option value="">No datasets available</option>
-                                </select>
-                                {sample_button_html}
-                            </div>
-                            {sample_hint_block}
-                        </div>
-                        <div>
-                            <label class="form-label" for="runTargetSelect">Target column</label>
-                            <select id="runTargetSelect" class="form-control" disabled>
-                                <option value="">Select a dataset first</option>
-                            </select>
-                            {target_hint_block}
-                        </div>
-                        <div>
-                            <label class="form-label" for="runMetrics">Primary metrics (comma separated)</label>
-                            <input id="runMetrics" class="form-control" placeholder="accuracy, f1, roc_auc">
-                        </div>
-                        <div class="panel-actions">
-                            <button type="submit" id="runSubmitBtn" class="primary-btn">Run AutoML</button>
-                            <button type="button" id="clearRunForm" class="secondary-btn">Reset</button>
-                        </div>
-                    </form>
-                </div>
-            </section>
-        </div>
-
-        <section class="panel" style="margin-top:28px;">
-            <div class="panel-header">
-                <h2 class="panel-title">3. Resource & metric preferences</h2>
-                <p class="panel-subtitle">These values are saved between sessions and reused for each run.</p>
-            </div>
-            <div class="panel-body">
-                <form id="settingsForm" class="form-grid" autocomplete="off">
-                    <div>
-                        <label class="form-label" for="settingsCvFolds">Cross-validation folds</label>
-                        <input id="settingsCvFolds" class="form-control" type="number" min="2" placeholder="5">
-                    </div>
-                    <div>
-                        <label class="form-label" for="settingsMaxTime">Max training time (seconds)</label>
-                        <input id="settingsMaxTime" class="form-control" type="number" step="1" min="0" placeholder="60">
-                    </div>
-                    <div>
-                        <label class="form-label" for="settingsMaxRam">Max RAM (MB)</label>
-                        <input id="settingsMaxRam" class="form-control" type="number" step="1" min="0" placeholder="4096">
-                    </div>
-                    <div>
-                        <label class="form-label" for="settingsMinPerf">Minimum performance (primary metric)</label>
-                        <input id="settingsMinPerf" class="form-control" type="number" step="0.001" min="0" placeholder="0.85">
-                    </div>
-                    <div class="checkbox-row">
-                        <input id="settingsInterpretability" type="checkbox">
-                        <label class="form-label" style="margin-bottom:0; text-transform:none; letter-spacing:0;" for="settingsInterpretability">Require interpretable models</label>
-                    </div>
-                    <div>
-                        <label class="form-label" for="settingsPreferredMetrics">Preferred metrics (comma separated)</label>
-                        <input id="settingsPreferredMetrics" class="form-control" placeholder="accuracy">
-                    </div>
-                    <div>
-                        <label class="form-label" for="settingsMetrics">Evaluation metrics (comma separated)</label>
-                        <input id="settingsMetrics" class="form-control" placeholder="accuracy, f1, roc_auc">
-                    </div>
-                    <div class="panel-actions">
-                        <button type="submit" class="primary-btn">Save Settings</button>
-                        <button type="button" id="resetSettings" class="secondary-btn">Restore Defaults</button>
-                    </div>
-                </form>
-            </div>
-        </section>
-    </div>
-
-    <div id="toast" class="toast"></div>
-"""
+        "                </div>\n"
+        "                <div class=\"hero-pill-row\">\n"
+        "                    <span class=\"hero-pill\">Guided launch workflow</span>\n"
+        "                    <span class=\"hero-pill\">Constraint aware runs</span>\n"
+        "                    <span class=\"hero-pill\">Shareable dashboards</span>\n"
+        "                </div>\n"
+        "            </div>\n"
+        "            <aside class=\"hero-card\">\n"
+        "                <h3 class=\"hero-card-title\">Launch checklist</h3>\n"
+        "                <ul class=\"hero-card-list\">\n"
+        "                    <li>Upload at least one dataset to the uploads/ folder</li>\n"
+        "                    <li>Confirm resource & metric settings for this session</li>\n"
+        "                    <li>Select a target column and press Run AutoML</li>\n"
+        "                </ul>\n"
+        f"                <div class=\"hero-card-note\">{status_badge_caption}</div>\n"
+        f"                <div class=\"hero-card-note\" style=\"border:1px solid rgba(148, 163, 184, 0.12); border-radius:16px; padding:14px; background:rgba(13, 23, 38, 0.65);\">{quick_sample_copy}</div>\n"
+        "            </aside>\n"
+        "        </section>\n"
+        "        <section class=\"quick-actions\">\n"
+        "            <div class=\"quick-card\">\n"
+        "                <div class=\"quick-icon\">📂</div>\n"
+        "                <div class=\"quick-title\">Upload datasets</div>\n"
+        "                <div class=\"quick-text\">Drag and drop CSV, Excel, JSON, or Parquet files. Each file is validated before it becomes selectable.</div>\n"
+        "            </div>\n"
+        "            <div class=\"quick-card\">\n"
+        "                <div class=\"quick-icon\">🧭</div>\n"
+        "                <div class=\"quick-title\">Set guardrails</div>\n"
+        "                <div class=\"quick-text\">Capture RAM ceilings, interpretability constraints, and training time budgets to keep experimentation safe.</div>\n"
+        "            </div>\n"
+        "            <div class=\"quick-card\">\n"
+        "                <div class=\"quick-icon\">🤖</div>\n"
+        "                <div class=\"quick-title\">Automate exploration</div>\n"
+        "                <div class=\"quick-text\">Launch the resource-aware AutoML engine with the metrics that matter, then monitor progress from the dashboard.</div>\n"
+        "            </div>\n"
+        "            <div class=\"quick-card\">\n"
+        "                <div class=\"quick-icon\">📈</div>\n"
+        "                <div class=\"quick-title\">Publish insights</div>\n"
+        "                <div class=\"quick-text\">Share the generated dashboard, export the leaderboard, or download trained models once the run completes.</div>\n"
+        "            </div>\n"
+        "        </section>\n"
+        "        <div class=\"panel-grid\">\n"
+        "            <section class=\"panel\">\n"
+        "                <div class=\"panel-header\">\n"
+        "                    <h2 class=\"panel-title\">1. Upload and review datasets</h2>\n"
+        "                    <p class=\"panel-subtitle\">Place files in uploads/ so they are available to every AutoML session. Refresh the list after new uploads.</p>\n"
+        "                </div>\n"
+        "                <div class=\"panel-body\">\n"
+        "                    <form id=\"uploadForm\" class=\"upload-form\">\n"
+        "                        <p style=\"margin-bottom:18px; font-weight:600;\">Drop a dataset file or browse</p>\n"
+        "                        <label class=\"upload-btn\" for=\"datasetFile\">Choose file</label>\n"
+        "                        <input type=\"file\" id=\"datasetFile\" name=\"datasetFile\" accept=\".csv,.xlsx,.xls,.json,.parquet\">\n"
+        "                        <p style=\"margin-top:16px; font-size:0.85rem; color:var(--text-muted);\">Each upload is validated for minimum rows, columns, and non-null data.</p>\n"
+        "                        <div class=\"panel-actions\" style=\"justify-content:center;\">\n"
+        "                            <button type=\"submit\" class=\"primary-btn\">Upload dataset</button>\n"
+        "                            <button type=\"button\" id=\"refreshDatasetsBtn\" class=\"secondary-btn\">Refresh list</button>\n"
+        "                        </div>\n"
+        "                    </form>\n"
+        "                    <div style=\"margin-top:26px;\">\n"
+        "                        <h3 style=\"margin:0 0 12px;font-size:1.05rem;\">Uploaded datasets</h3>\n"
+        "                        <div style=\"max-height:240px; overflow-y:auto; border:1px solid rgba(148, 163, 184, 0.16); border-radius:16px;\">\n"
+        "                            <table class=\"dataset-table\">\n"
+        "                                <thead>\n"
+        "                                    <tr>\n"
+        "                                        <th>Name</th>\n"
+        "                                        <th>Size</th>\n"
+        "                                        <th>Modified</th>\n"
+        "                                        <th>Actions</th>\n"
+        "                                    </tr>\n"
+        "                                </thead>\n"
+        "                                <tbody id=\"datasetTableBody\">\n"
+        "                                    <tr><td colspan=\"4\" style=\"text-align:center; padding:22px; color:var(--text-muted);\">No datasets uploaded yet.</td></tr>\n"
+        "                                </tbody>\n"
+        "                            </table>\n"
+        "                        </div>\n"
+        "                    </div>\n"
+        "                </div>\n"
+        "            </section>\n"
+        "            <section class=\"panel\">\n"
+        "                <div class=\"panel-header\">\n"
+        "                    <h2 class=\"panel-title\">2. Configure AutoML run</h2>\n"
+        "                    <p class=\"panel-subtitle\">Pick a dataset, select the target column, and choose the primary metrics before starting the engine.</p>\n"
+        "                </div>\n"
+        "                <div class=\"panel-body\">\n"
+        "                    <form id=\"runForm\" class=\"form-grid\" autocomplete=\"off\">\n"
+        "                        <div>\n"
+        "                            <label class=\"form-label\" for=\"runDatasetSelect\">Dataset</label>\n"
+        "                            <div class=\"dataset-select-row\">\n"
+        "                                <select id=\"runDatasetSelect\" class=\"form-control\">\n"
+        "                                    <option value=\"\">No datasets available</option>\n"
+        "                                </select>\n"
+        f"                                {sample_button_html}\n"
+        "                            </div>\n"
+        f"                            {sample_hint_block}\n"
+        "                        </div>\n"
+        "                        <div>\n"
+        "                            <label class=\"form-label\" for=\"runTargetSelect\">Target column</label>\n"
+        "                            <select id=\"runTargetSelect\" class=\"form-control\" disabled>\n"
+        "                                <option value=\"\">Select a dataset first</option>\n"
+        "                            </select>\n"
+        f"                            {target_hint_block}\n"
+        "                        </div>\n"
+        "                        <div>\n"
+        "                            <label class=\"form-label\" for=\"runMetrics\">Primary metrics (comma separated)</label>\n"
+        "                            <input id=\"runMetrics\" class=\"form-control\" placeholder=\"accuracy, f1, roc_auc\">\n"
+        "                        </div>\n"
+        "                        <div class=\"panel-actions\">\n"
+        "                            <button type=\"submit\" id=\"runSubmitBtn\" class=\"primary-btn\">Run AutoML</button>\n"
+        "                            <button type=\"button\" id=\"clearRunForm\" class=\"secondary-btn\">Reset</button>\n"
+        "                        </div>\n"
+        "                    </form>\n"
+        "                </div>\n"
+        "            </section>\n"
+        "        </div>\n"
+        "        <section class=\"panel\" style=\"margin-top:30px;\">\n"
+        "            <div class=\"panel-header\">\n"
+        "                <h2 class=\"panel-title\">3. Resource & metric preferences</h2>\n"
+        "                <p class=\"panel-subtitle\">Save constraint defaults once and reuse them across runs to keep experiments aligned with deployment goals.</p>\n"
+        "            </div>\n"
+        "            <div class=\"panel-body\">\n"
+        "                <form id=\"settingsForm\" class=\"form-grid\" autocomplete=\"off\">\n"
+        "                    <div>\n"
+        "                        <label class=\"form-label\" for=\"settingsCvFolds\">Cross-validation folds</label>\n"
+        "                        <input id=\"settingsCvFolds\" class=\"form-control\" type=\"number\" min=\"2\" placeholder=\"5\">\n"
+        "                    </div>\n"
+        "                    <div>\n"
+        "                        <label class=\"form-label\" for=\"settingsMaxTime\">Max training time (seconds)</label>\n"
+        "                        <input id=\"settingsMaxTime\" class=\"form-control\" type=\"number\" step=\"1\" min=\"0\" placeholder=\"60\">\n"
+        "                    </div>\n"
+        "                    <div>\n"
+        "                        <label class=\"form-label\" for=\"settingsMaxRam\">Max RAM (MB)</label>\n"
+        "                        <input id=\"settingsMaxRam\" class=\"form-control\" type=\"number\" step=\"1\" min=\"0\" placeholder=\"4096\">\n"
+        "                    </div>\n"
+        "                    <div>\n"
+        "                        <label class=\"form-label\" for=\"settingsMinPerf\">Minimum performance (primary metric)</label>\n"
+        "                        <input id=\"settingsMinPerf\" class=\"form-control\" type=\"number\" step=\"0.001\" min=\"0\" placeholder=\"0.85\">\n"
+        "                    </div>\n"
+        "                    <div class=\"checkbox-row\">\n"
+        "                        <input id=\"settingsInterpretability\" type=\"checkbox\">\n"
+        "                        <label class=\"form-label\" style=\"margin-bottom:0; text-transform:none; letter-spacing:0;\" for=\"settingsInterpretability\">Require interpretable models</label>\n"
+        "                    </div>\n"
+        "                    <div>\n"
+        "                        <label class=\"form-label\" for=\"settingsPreferredMetrics\">Preferred metrics (comma separated)</label>\n"
+        "                        <input id=\"settingsPreferredMetrics\" class=\"form-control\" placeholder=\"accuracy\">\n"
+        "                    </div>\n"
+        "                    <div>\n"
+        "                        <label class=\"form-label\" for=\"settingsMetrics\">Evaluation metrics (comma separated)</label>\n"
+        "                        <input id=\"settingsMetrics\" class=\"form-control\" placeholder=\"accuracy, f1, roc_auc\">\n"
+        "                    </div>\n"
+        "                    <div class=\"panel-actions\">\n"
+        "                        <button type=\"submit\" class=\"primary-btn\">Save settings</button>\n"
+        "                        <button type=\"button\" id=\"resetSettings\" class=\"secondary-btn\">Restore defaults</button>\n"
+        "                    </div>\n"
+        "                </form>\n"
+        "            </div>\n"
+        "        </section>\n"
+        "    </div>\n"
+        "    <div id=\"toast\" class=\"toast\"></div>\n"
     )
 
     parts.append("<script>\n")
