@@ -1,4 +1,4 @@
-"""Flask web UI for visualizing AutoML results with an explainable dark-themed dashboard."""
+"""Flask web UI for visualizing AutoML results with an explainable theme-aware dashboard."""
 
 from __future__ import annotations
 
@@ -959,14 +959,66 @@ def _build_start_page(
             --danger: #f87171;
             --success: #34d399;
         }
+
+        /* Light Theme */
+        :root[data-theme="light"] {
+            --bg: #f8fafc;
+            --bg-glow: rgba(59, 130, 246, 0.08);
+            --panel: rgba(241, 245, 250, 0.95);
+            --panel-alt: rgba(248, 250, 252, 0.9);
+            --border: rgba(148, 163, 184, 0.25);
+            --border-strong: rgba(148, 163, 184, 0.4);
+            --accent: #0284c7;
+            --accent-strong: #0369a1;
+            --accent-soft: rgba(2, 132, 199, 0.12);
+            --accent-contrast: #f0f9ff;
+            --neutral-soft: rgba(100, 116, 139, 0.12);
+            --text: #1e293b;
+            --text-strong: #0f172a;
+            --text-muted: #64748b;
+            --shadow: rgba(15, 23, 42, 0.1);
+            --danger: #dc2626;
+            --success: #059669;
+            --accent-soft-light: rgba(2, 132, 199, 0.08);
+            --accent-softer-light: rgba(2, 132, 199, 0.12);
+            --accent-softest-light: rgba(2, 132, 199, 0.14);
+            --panel-light: rgba(226, 232, 240, 0.85);
+            --panel-lighter: rgba(241, 245, 250, 0.75);
+            --panel-lightest: rgba(248, 250, 252, 0.9);
+        }
+
+        /* Dark Theme */
+        :root[data-theme="dark"] {
+            --bg: #020617;
+            --bg-glow: rgba(59, 130, 246, 0.22);
+            --panel: rgba(15, 23, 42, 0.88);
+            --panel-alt: rgba(17, 24, 39, 0.9);
+            --border: rgba(148, 163, 184, 0.18);
+            --border-strong: rgba(148, 163, 184, 0.35);
+            --accent: #38bdf8;
+            --accent-strong: #0ea5e9;
+            --accent-soft: rgba(14, 165, 233, 0.16);
+            --accent-contrast: #04111f;
+            --neutral-soft: rgba(100, 116, 139, 0.18);
+            --text: #e2e8f9;
+            --text-strong: #f8fafc;
+            --text-muted: #94a3c0;
+            --shadow: rgba(2, 6, 23, 0.6);
+            --danger: #f87171;
+            --success: #34d399;
+            --accent-soft-light: rgba(14, 165, 233, 0.12);
+            --accent-softer-light: rgba(14, 165, 233, 0.16);
+            --accent-softest-light: rgba(14, 165, 233, 0.18);
+            --panel-light: rgba(13, 19, 34, 0.88);
+            --panel-lighter: rgba(10, 16, 28, 0.55);
+            --panel-lightest: rgba(9, 15, 28, 0.92);
+        }
         * {
             box-sizing: border-box;
         }
         body.launch-body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: radial-gradient(120% 120% at 100% 0%, rgba(14, 165, 233, 0.12), transparent 60%),
-                radial-gradient(120% 120% at 0% 0%, rgba(59, 130, 246, 0.08), transparent 55%),
-                var(--bg);
+            background: var(--bg);
             color: var(--text);
             margin: 0;
             min-height: 100vh;
@@ -976,8 +1028,7 @@ def _build_start_page(
             content: "";
             position: fixed;
             inset: -20%;
-            background: radial-gradient(48% 48% at 80% 12%, rgba(56, 189, 248, 0.12), transparent 70%),
-                radial-gradient(52% 52% at 12% 12%, rgba(94, 234, 212, 0.12), transparent 75%);
+            background: transparent;
             filter: blur(32px);
             opacity: 0.8;
             pointer-events: none;
@@ -987,6 +1038,33 @@ def _build_start_page(
             max-width: 1180px;
             margin: 0 auto;
         }
+
+        /* Global theme-aware styles */
+        input, textarea, select {
+            background-color: var(--panel);
+            color: var(--text);
+            border-color: var(--border);
+        }
+
+        button {
+            background-color: var(--accent);
+            color: var(--accent-contrast);
+        }
+
+        a {
+            color: var(--accent);
+        }
+
+        table {
+            background-color: var(--panel);
+            color: var(--text);
+        }
+
+        thead {
+            background-color: var(--panel-alt);
+            border-color: var(--border);
+        }
+
         .launch-header {
             display: flex;
             justify-content: space-between;
@@ -1039,7 +1117,7 @@ def _build_start_page(
             font-size: 0.87rem;
             letter-spacing: 0.02em;
             border: 1px solid var(--neutral-soft);
-            background: rgba(15, 23, 42, 0.7);
+            background: var(--panel);
             color: var(--text);
         }
         .status-badge::before {
@@ -1067,7 +1145,7 @@ def _build_start_page(
             padding: 44px;
             border-radius: 32px;
             border: 1px solid var(--border);
-            background: linear-gradient(145deg, rgba(17, 24, 39, 0.92), rgba(15, 23, 42, 0.82));
+            background: linear-gradient(145deg, var(--panel-alt), var(--panel));
             box-shadow: 0 32px 60px var(--shadow);
             overflow: hidden;
             margin-bottom: 36px;
@@ -1130,7 +1208,7 @@ def _build_start_page(
             z-index: 1;
             border-radius: 24px;
             border: 1px solid var(--border-strong);
-            background: rgba(10, 16, 30, 0.7);
+            background: var(--panel-light);
             padding: 28px;
             display: flex;
             flex-direction: column;
@@ -1156,8 +1234,8 @@ def _build_start_page(
             align-items: center;
             padding: 12px;
             border-radius: 14px;
-            background: rgba(15, 23, 42, 0.62);
-            border: 1px solid rgba(148, 163, 184, 0.12);
+            background: var(--panel);
+            border: 1px solid var(--border);
         }
         .hero-card-list li::before {
             content: "✔";
@@ -1181,9 +1259,9 @@ def _build_start_page(
             position: relative;
             border-radius: 22px;
             padding: 24px;
-            background: rgba(15, 23, 42, 0.72);
-            border: 1px solid rgba(148, 163, 184, 0.15);
-            box-shadow: 0 18px 36px rgba(8, 11, 22, 0.4);
+            background: var(--panel);
+            border: 1px solid var(--border);
+            box-shadow: 0 18px 36px var(--shadow);
             transition: transform 0.25s ease, border-color 0.25s ease;
         }
         .quick-card::after {
@@ -1192,12 +1270,12 @@ def _build_start_page(
             inset: 0;
             border-radius: inherit;
             opacity: 0;
-            background: linear-gradient(135deg, rgba(14, 165, 233, 0.18), transparent 55%);
+            background: linear-gradient(135deg, var(--accent-softest-light), transparent 55%);
             transition: opacity 0.25s ease;
         }
         .quick-card:hover {
             transform: translateY(-6px);
-            border-color: rgba(56, 189, 248, 0.45);
+            border-color: var(--accent-strong);
         }
         .quick-card:hover::after {
             opacity: 1;
@@ -1214,7 +1292,7 @@ def _build_start_page(
             place-items: center;
             font-size: 1.35rem;
             margin-bottom: 16px;
-            background: rgba(14, 165, 233, 0.16);
+            background: var(--accent-soft);
         }
         .quick-title {
             font-weight: 600;
@@ -1235,14 +1313,14 @@ def _build_start_page(
             background: var(--panel);
             border-radius: 26px;
             border: 1px solid var(--border);
-            box-shadow: 0 26px 55px rgba(5, 10, 25, 0.55);
+            box-shadow: 0 26px 55px var(--shadow);
             display: flex;
             flex-direction: column;
             overflow: hidden;
         }
         .panel-header {
             padding: 28px 30px 12px;
-            background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(13, 23, 38, 0.78));
+            background: linear-gradient(135deg, var(--panel), var(--panel-alt));
         }
         .panel-title {
             margin: 0;
@@ -1255,7 +1333,7 @@ def _build_start_page(
         }
         .panel-body {
             padding: 24px 30px 32px;
-            background: rgba(13, 19, 34, 0.88);
+            background: var(--panel-light);
             flex: 1;
         }
         .upload-form {
@@ -1301,8 +1379,8 @@ def _build_start_page(
         select.form-control,
         textarea.form-control {
             width: 100%;
-            background: rgba(9, 14, 24, 0.75);
-            border: 1px solid rgba(148, 163, 184, 0.28);
+            background: var(--panel-lighter);
+            border: 1px solid var(--border);
             border-radius: 14px;
             padding: 12px 14px;
             color: var(--text);
@@ -1405,7 +1483,7 @@ def _build_start_page(
             font-size: 0.9rem;
         }
         .dataset-table thead {
-            background: rgba(10, 16, 30, 0.72);
+            background: var(--panel-lighter);
         }
         .dataset-table th,
         .dataset-table td {
@@ -1484,7 +1562,7 @@ def _build_start_page(
         }
         .secondary-link {
             border: 1px solid rgba(148, 163, 184, 0.35);
-            background: rgba(11, 18, 34, 0.72);
+            background: var(--panel-lighter);
             color: var(--text);
         }
         .secondary-link:hover {
@@ -1572,6 +1650,7 @@ def _build_start_page(
                 </div>
             </div>
             <div class="header-right">
+                <button id="themeToggleBtn" onclick="toggleTheme()" style="background:var(--accent); border:none; color:var(--accent-contrast); padding:6px 12px; border-radius:6px; cursor:pointer; font-size:1rem; margin-right:12px; display:flex; align-items:center; gap:6px;\">🌙</button>
                 <a href="javascript:showSettingsView()" class="primary-link" id="preferencesBtn" style="display:none; margin:0; padding:6px 14px; border-radius:6px; font-size:0.9rem;\">Adjust preferences</a>
             </div>
         </header>
@@ -1614,7 +1693,7 @@ def _build_start_page(
         "                    <li>Select a target column and press Run AutoML</li>\n"
         "                </ul>\n"
         f"                <div class=\"hero-card-note\">{status_badge_caption}</div>\n"
-        f"                <div class=\"hero-card-note\" style=\"border:1px solid rgba(148, 163, 184, 0.12); border-radius:16px; padding:14px; background:rgba(13, 23, 38, 0.65);\">{quick_sample_copy}</div>\n"
+        f"                <div class=\"hero-card-note\" style=\"border:1px solid var(--border); border-radius:16px; padding:14px; background:var(--panel);\">{quick_sample_copy}</div>\n"
         "            </aside>\n"
         "        </section>\n"
         "        <section class=\"quick-actions\">\n"
@@ -1641,7 +1720,7 @@ def _build_start_page(
         "        </section>\n"
         "        </div>\n"
         "        <div id=\"automlView\" style=\"display:none;\">\n"
-        "        <div style=\"margin-bottom:20px;\"><a href=\"javascript:showLandingView()\" style=\"color:#00d4ff; cursor:pointer; text-decoration:none; font-weight:500;\">← Back to home</a></div>\n"
+        "        <div style=\"margin-bottom:20px;\"><a href=\"javascript:showLandingView()\" style=\"color:var(--accent); cursor:pointer; text-decoration:none; font-weight:500;\">← Back to home</a></div>\n"
         "        <div class=\"panel-grid\">\n"
         "            <section class=\"panel\">\n"
         "                <div class=\"panel-header\">\n"
@@ -1716,7 +1795,7 @@ def _build_start_page(
         "            </section>\n"
         "        </div>\n"
         "        </div>\n"
-        "        <div style=\"margin-bottom:20px; display:none;\" id=\"settingsBackBtn\"><a href=\"javascript:showLandingView()\" style=\"color:#00d4ff; cursor:pointer; text-decoration:none; font-weight:500;\">← Back to home</a></div>\n"
+        "        <div style=\"margin-bottom:20px; display:none;\" id=\"settingsBackBtn\"><a href=\"javascript:showLandingView()\" style=\"color:var(--accent); cursor:pointer; text-decoration:none; font-weight:500;\">← Back to home</a></div>\n"
         "        <section id=\"settingsView\" class=\"panel\" style=\"margin-top:30px; display:none;\">\n"
         "            <div class=\"panel-header\">\n"
         "                <h2 class=\"panel-title\">3. Resource & metric preferences</h2>\n"
@@ -2198,6 +2277,48 @@ def _build_start_page(
             document.getElementById('preferencesBtn').style.display = 'none';
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
+
+        // Theme switching functions
+        function getPreferredTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'light' || savedTheme === 'dark') {
+                return savedTheme;
+            }
+            return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+
+        function initTheme() {
+            const theme = getPreferredTheme();
+            document.documentElement.setAttribute('data-theme', theme);
+            updateThemeButton(theme);
+        }
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeButton(newTheme);
+        }
+
+        function updateThemeButton(theme) {
+            const btn = document.getElementById('themeToggleBtn');
+            if (btn) {
+                btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+                btn.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+            }
+        }
+
+        // Initialize theme on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            initTheme();
+            const media = window.matchMedia('(prefers-color-scheme: light)');
+            media.addEventListener('change', () => {
+                if (!localStorage.getItem('theme')) {
+                    initTheme();
+                }
+            });
+        });
     </script>
 </body>
 </html>
@@ -2861,12 +2982,14 @@ def _build_html_dashboard(
         <style>
             :root {
                 --bg: #050b18;
+                --bg-glow: rgba(56, 189, 248, 0.18);
                 --panel: #0f172a;
                 --panel-alt: #0b1120;
                 --panel-soft: #131c2e;
                 --accent: #5fe3c0;
                 --accent-strong: #38bdf8;
                 --accent-muted: rgba(95, 227, 192, 0.25);
+                --accent-glow: rgba(95, 227, 192, 0.25);
                 --danger: #f87171;
                 --warning: #fbbf24;
                 --success: #34d399;
@@ -2874,7 +2997,61 @@ def _build_html_dashboard(
                 --text-muted: #94a3b8;
                 --border: rgba(148, 163, 184, 0.25);
                 --shadow: rgba(7, 13, 28, 0.6);
+                --panel-shadow: rgba(7, 13, 28, 0.45);
+                --table-head: rgba(9, 15, 28, 0.92);
+                --group-head: rgba(11, 17, 32, 0.85);
+                --tooltip-bg: rgba(11, 17, 32, 0.95);
+                --overlay: rgba(0, 0, 0, 0.8);
+                --chart-grid: rgba(148, 163, 184, 0.15);
                 --deemphasized: rgba(148, 163, 184, 0.35);
+            }
+            :root[data-theme="light"] {
+                --bg: #f8fafc;
+                --bg-glow: rgba(56, 189, 248, 0.08);
+                --panel: #ffffff;
+                --panel-alt: #f8fafc;
+                --panel-soft: #eef2ff;
+                --accent: #0f766e;
+                --accent-strong: #0284c7;
+                --accent-muted: rgba(2, 132, 199, 0.16);
+                --accent-glow: rgba(14, 165, 233, 0.16);
+                --danger: #dc2626;
+                --warning: #d97706;
+                --success: #059669;
+                --text: #0f172a;
+                --text-muted: #475569;
+                --border: rgba(100, 116, 139, 0.28);
+                --shadow: rgba(15, 23, 42, 0.12);
+                --panel-shadow: rgba(15, 23, 42, 0.08);
+                --table-head: rgba(241, 245, 249, 0.95);
+                --group-head: rgba(241, 245, 249, 0.9);
+                --tooltip-bg: rgba(226, 232, 240, 0.98);
+                --overlay: rgba(15, 23, 42, 0.35);
+                --chart-grid: rgba(100, 116, 139, 0.2);
+            }
+            :root[data-theme="dark"] {
+                --bg: #050b18;
+                --bg-glow: rgba(56, 189, 248, 0.18);
+                --panel: #0f172a;
+                --panel-alt: #0b1120;
+                --panel-soft: #131c2e;
+                --accent: #5fe3c0;
+                --accent-strong: #38bdf8;
+                --accent-muted: rgba(95, 227, 192, 0.25);
+                --accent-glow: rgba(95, 227, 192, 0.25);
+                --danger: #f87171;
+                --warning: #fbbf24;
+                --success: #34d399;
+                --text: #e6edf7;
+                --text-muted: #94a3b8;
+                --border: rgba(148, 163, 184, 0.25);
+                --shadow: rgba(7, 13, 28, 0.6);
+                --panel-shadow: rgba(7, 13, 28, 0.45);
+                --table-head: rgba(9, 15, 28, 0.92);
+                --group-head: rgba(11, 17, 32, 0.85);
+                --tooltip-bg: rgba(11, 17, 32, 0.95);
+                --overlay: rgba(0, 0, 0, 0.8);
+                --chart-grid: rgba(148, 163, 184, 0.15);
             }
             * {
                 margin: 0;
@@ -2883,11 +3060,11 @@ def _build_html_dashboard(
             }
             body {
                 font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                background: radial-gradient(circle at top, rgba(56, 189, 248, 0.18), transparent 45%), var(--bg);
+                background: radial-gradient(circle at top, var(--bg-glow), transparent 45%), var(--bg);
                 min-height: 100vh;
                 padding: 32px 18px 48px;
                 color: var(--text);
-                transition: background 0.4s ease;
+                transition: background 0.4s ease, color 0.25s ease;
             }
             body[data-mode=\"accuracy\"] .section-quality .section-title {
                 color: var(--accent-strong);
@@ -2922,13 +3099,27 @@ def _build_html_dashboard(
                 font-size: 0.95rem;
                 color: var(--text-muted);
             }
+            .theme-toggle-btn {
+                border: 1px solid var(--border);
+                background: var(--panel-alt);
+                color: var(--text);
+                border-radius: 10px;
+                padding: 8px 12px;
+                font-size: 0.95rem;
+                cursor: pointer;
+                transition: border-color 0.2s ease, transform 0.2s ease;
+            }
+            .theme-toggle-btn:hover {
+                border-color: var(--accent-strong);
+                transform: translateY(-1px);
+            }
             .hero-section {
                 background: var(--panel);
                 border-radius: 22px;
                 padding: 40px;
                 margin-bottom: 24px;
                 border: 1px solid var(--border);
-                box-shadow: 0 24px 60px rgba(7, 13, 28, 0.45);
+                box-shadow: 0 24px 60px var(--panel-shadow);
                 position: relative;
                 overflow: hidden;
             }
@@ -2939,7 +3130,7 @@ def _build_html_dashboard(
                 right: -20%;
                 width: 420px;
                 height: 420px;
-                background: radial-gradient(circle, rgba(95, 227, 192, 0.25), transparent);
+                background: radial-gradient(circle, var(--accent-glow), transparent);
             }
             .hero-content {
                 position: relative;
@@ -3056,7 +3247,7 @@ def _build_html_dashboard(
                 background: var(--panel);
                 border-radius: 20px;
                 border: 1px solid var(--border);
-                box-shadow: 0 18px 40px rgba(7, 13, 28, 0.4);
+                box-shadow: 0 18px 40px var(--shadow);
                 padding: 24px 26px 12px;
                 margin-bottom: 24px;
             }
@@ -3149,7 +3340,7 @@ def _build_html_dashboard(
                 line-height: 1.3;
             }
             thead {
-                background: rgba(9, 15, 28, 0.92);
+                background: var(--table-head);
             }
             th {
                 padding: 14px 16px;
@@ -3174,7 +3365,7 @@ def _build_html_dashboard(
                 box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.35);
             }
             .group-heading {
-                background: rgba(11, 17, 32, 0.85);
+                background: var(--group-head);
             }
             .group-heading-content {
                 display: flex;
@@ -3269,7 +3460,7 @@ def _build_html_dashboard(
                 left: 50%;
                 bottom: 140%;
                 transform: translateX(-50%);
-                background: rgba(11, 17, 32, 0.95);
+                background: var(--tooltip-bg);
                 color: var(--text);
                 padding: 10px 14px;
                 border-radius: 10px;
@@ -3332,7 +3523,7 @@ def _build_html_dashboard(
                 top: 0;
                 width: 100%;
                 height: 100%;
-                background-color: rgba(0, 0, 0, 0.8);
+                background-color: var(--overlay);
             }
             .modal-content {
                 background-color: var(--panel);
@@ -3373,11 +3564,11 @@ def _build_html_dashboard(
             }
             .upload-area:hover {
                 border-color: var(--accent);
-                background: rgba(95, 227, 192, 0.05);
+                background: var(--accent-muted);
             }
             .upload-area.dragover {
                 border-color: var(--accent);
-                background: rgba(95, 227, 192, 0.1);
+                background: var(--accent-muted);
             }
             #fileInput {
                 display: none;
@@ -3411,6 +3602,7 @@ def _build_html_dashboard(
                 <div class=\"navbar-brand\"><i class=\"fas fa-robot\"></i> AutoML Decision Hub</div>
                 <div style=\"display: flex; gap: 20px; align-items: center;\">
                     <div class=\"navbar-context\">Resource-aware AutoML · Production Readiness Lens</div>
+                    <button id="themeToggleBtn" class="theme-toggle-btn" onclick="toggleTheme()">🌙</button>
                     <button class=\"navbar-upload-btn\" onclick=\"openUploadModal()\" style=\"cursor: pointer;\">Upload Dataset</button>
                 </div>
             </div>
@@ -3593,33 +3785,123 @@ def _build_html_dashboard(
         </div>
 
         <script>
+            const chartCache = {};
+
+            function getCssVar(name) {
+                return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+            }
+
+            function getPreferredTheme() {
+                const savedTheme = localStorage.getItem('theme');
+                if (savedTheme === 'light' || savedTheme === 'dark') {
+                    return savedTheme;
+                }
+                return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+            }
+
+            function updateThemeButton(theme) {
+                const btn = document.getElementById('themeToggleBtn');
+                if (!btn) return;
+                btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+                btn.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+            }
+
+            function initTheme() {
+                const theme = getPreferredTheme();
+                document.documentElement.setAttribute('data-theme', theme);
+                updateThemeButton(theme);
+            }
+
+            function toggleTheme() {
+                const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+                const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                document.documentElement.setAttribute('data-theme', nextTheme);
+                localStorage.setItem('theme', nextTheme);
+                updateThemeButton(nextTheme);
+                rerenderChartsFromCache();
+            }
+
+            function applyThemeToLayout(baseLayout) {
+                const textColor = getCssVar('--text') || '#e6edf7';
+                const mutedColor = getCssVar('--text-muted') || '#94a3b8';
+                const gridColor = getCssVar('--chart-grid') || 'rgba(148, 163, 184, 0.15)';
+
+                const themedLayout = Object.assign({}, baseLayout || {});
+                themedLayout.font = Object.assign({}, themedLayout.font || {}, {
+                    family: 'Inter, sans-serif',
+                    color: textColor,
+                    size: 12,
+                });
+                themedLayout.plot_bgcolor = 'rgba(0,0,0,0)';
+                themedLayout.paper_bgcolor = 'rgba(0,0,0,0)';
+                themedLayout.margin = Object.assign({ t: 30, r: 20, b: 40, l: 60 }, themedLayout.margin || {});
+                themedLayout.legend = Object.assign({}, themedLayout.legend || {}, {
+                    font: Object.assign({}, (themedLayout.legend || {}).font || {}, { color: mutedColor }),
+                });
+
+                Object.keys(themedLayout).forEach((key) => {
+                    if (!key.startsWith('xaxis') && !key.startsWith('yaxis')) {
+                        return;
+                    }
+                    const axis = Object.assign({}, themedLayout[key] || {});
+                    axis.tickfont = Object.assign({}, axis.tickfont || {}, { color: mutedColor });
+                    axis.titlefont = Object.assign({}, axis.titlefont || {}, { color: mutedColor });
+                    if (axis.showgrid) {
+                        axis.gridcolor = gridColor;
+                    }
+                    if (axis.zeroline) {
+                        axis.zerolinecolor = gridColor;
+                    }
+                    themedLayout[key] = axis;
+                });
+
+                if (Array.isArray(themedLayout.annotations)) {
+                    themedLayout.annotations = themedLayout.annotations.map((annotation) => {
+                        if (annotation && annotation.font && annotation.font.color) {
+                            return annotation;
+                        }
+                        return Object.assign({}, annotation, {
+                            font: Object.assign({}, (annotation || {}).font || {}, { color: mutedColor }),
+                        });
+                    });
+                }
+
+                return themedLayout;
+            }
+
+            function renderChart(id, payload) {
+                const container = document.getElementById(id);
+                if (!container) return;
+                if (!payload || payload.error) {
+                    container.innerHTML = `<div class="chart-empty">${payload && payload.error ? payload.error : 'No data'}</div>`;
+                    return;
+                }
+                const themedLayout = applyThemeToLayout(payload.layout || {});
+                Plotly.newPlot(id, payload.data, themedLayout, { responsive: true, displayModeBar: false });
+            }
+
             async function loadCharts() {
                 const endpoints = [
                     { id: 'chart-quality', url: '/api/charts/metrics' },
                     { id: 'chart-cost', url: '/api/charts/resources' }
                 ];
-                const commonLayout = {
-                    font: { family: 'Inter, sans-serif', color: '#e6edf7', size: 12 },
-                    plot_bgcolor: 'rgba(0,0,0,0)',
-                    paper_bgcolor: 'rgba(0,0,0,0)',
-                    margin: { t: 30, r: 20, b: 40, l: 60 }
-                };
 
                 for (const endpoint of endpoints) {
                     try {
                         const response = await fetch(endpoint.url);
                         const payload = await response.json();
-                        const container = document.getElementById(endpoint.id);
-                        if (!container) continue;
-                        if (payload.error) {
-                            container.innerHTML = `<div class=\"chart-empty\">${payload.error}</div>`;
-                            continue;
-                        }
-                        Plotly.newPlot(endpoint.id, payload.data, Object.assign({}, payload.layout, commonLayout), { responsive: true, displayModeBar: false });
+                        chartCache[endpoint.id] = payload;
+                        renderChart(endpoint.id, payload);
                     } catch (error) {
                         console.error('Error loading chart', endpoint.id, error);
                     }
                 }
+            }
+
+            function rerenderChartsFromCache() {
+                Object.entries(chartCache).forEach(([chartId, payload]) => {
+                    renderChart(chartId, payload);
+                });
             }
 
             function initRankingToggle() {
@@ -3664,9 +3946,18 @@ def _build_html_dashboard(
             }
 
             window.addEventListener('load', () => {
+                initTheme();
                 loadCharts();
                 initRankingToggle();
                 initGroupToggles();
+
+                const media = window.matchMedia('(prefers-color-scheme: light)');
+                media.addEventListener('change', () => {
+                    if (!localStorage.getItem('theme')) {
+                        initTheme();
+                        rerenderChartsFromCache();
+                    }
+                });
             });
         </script>
     </body>
