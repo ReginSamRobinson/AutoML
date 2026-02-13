@@ -971,7 +971,7 @@ def _build_start_page(
             --accent: #0284c7;
             --accent-strong: #0369a1;
             --accent-soft: rgba(2, 132, 199, 0.12);
-            --accent-contrast: #f0f9ff;
+            --accent-contrast: #0f172a;
             --neutral-soft: rgba(100, 116, 139, 0.12);
             --text: #1e293b;
             --text-strong: #0f172a;
@@ -1086,7 +1086,7 @@ def _build_start_page(
             font-weight: 700;
             font-size: 1.05rem;
             color: var(--accent-contrast);
-            background: linear-gradient(135deg, rgba(56, 189, 248, 0.95), rgba(94, 234, 212, 0.95));
+            background: var(--accent);
             box-shadow: 0 18px 32px rgba(14, 165, 233, 0.35);
         }
         .brand-copy {
@@ -1145,7 +1145,7 @@ def _build_start_page(
             padding: 44px;
             border-radius: 32px;
             border: 1px solid var(--border);
-            background: linear-gradient(145deg, var(--panel-alt), var(--panel));
+            background: var(--panel);
             box-shadow: 0 32px 60px var(--shadow);
             overflow: hidden;
             margin-bottom: 36px;
@@ -1154,7 +1154,7 @@ def _build_start_page(
             content: "";
             position: absolute;
             inset: -40% 40% 35% -20%;
-            background: radial-gradient(circle at 30% 30%, rgba(14, 165, 233, 0.28), transparent 60%);
+            background: none;
             filter: blur(12px);
             opacity: 0.7;
             pointer-events: none;
@@ -1320,7 +1320,7 @@ def _build_start_page(
         }
         .panel-header {
             padding: 28px 30px 12px;
-            background: linear-gradient(135deg, var(--panel), var(--panel-alt));
+            background: var(--panel);
         }
         .panel-title {
             margin: 0;
@@ -1433,7 +1433,7 @@ def _build_start_page(
             border-radius: 14px;
             padding: 12px 20px;
             font-weight: 600;
-            background: linear-gradient(135deg, rgba(14, 165, 233, 0.88), rgba(59, 130, 246, 0.88));
+            background: var(--accent);
             color: var(--accent-contrast);
             cursor: pointer;
             transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -1553,7 +1553,7 @@ def _build_start_page(
             transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
         }
         .primary-link {
-            background: linear-gradient(135deg, rgba(14, 165, 233, 0.88), rgba(59, 130, 246, 0.88));
+            background: var(--accent);
             color: var(--accent-contrast);
         }
         .primary-link:hover {
@@ -3060,7 +3060,7 @@ def _build_html_dashboard(
             }
             body {
                 font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                background: radial-gradient(circle at top, var(--bg-glow), transparent 45%), var(--bg);
+                background: var(--bg);
                 min-height: 100vh;
                 padding: 32px 18px 48px;
                 color: var(--text);
@@ -3130,7 +3130,7 @@ def _build_html_dashboard(
                 right: -20%;
                 width: 420px;
                 height: 420px;
-                background: radial-gradient(circle, var(--accent-glow), transparent);
+                background: none;
             }
             .hero-content {
                 position: relative;
