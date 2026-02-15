@@ -1337,11 +1337,11 @@ def _build_start_page(
             flex: 1;
         }
         .upload-form {
-            border: 1px dashed rgba(148, 163, 184, 0.3);
+            border: 2px dashed rgba(56, 189, 248, 0.5);
             border-radius: 18px;
             padding: 32px;
             text-align: center;
-            background: rgba(10, 16, 28, 0.55);
+            background: rgba(14, 165, 233, 0.15);
         }
         .upload-form input[type="file"] {
             display: none;
@@ -1465,17 +1465,33 @@ def _build_start_page(
             100% { transform: rotate(360deg); }
         }
         button.secondary-btn {
-            border: 1px solid rgba(148, 163, 184, 0.32);
+            border: 1px solid rgba(56, 189, 248, 0.6);
             border-radius: 14px;
             padding: 11px 18px;
             font-weight: 600;
-            background: rgba(12, 20, 33, 0.72);
-            color: var(--text);
+            background: rgba(14, 165, 233, 0.85);
+            color: #ffffff;
             cursor: pointer;
-            transition: border-color 0.2s ease;
+            transition: border-color 0.2s ease, background 0.2s ease;
         }
         button.secondary-btn:hover {
-            border-color: rgba(148, 163, 184, 0.55);
+            border-color: rgba(56, 189, 248, 0.9);
+            background: rgba(56, 189, 248, 1);
+        }
+        button.ghost-btn {
+            background-color: rgba(14, 165, 233, 0.85);
+            color: #ffffff;
+            border: 1px solid rgba(56, 189, 248, 0.6);
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }
+        button.ghost-btn:hover {
+            background-color: rgba(56, 189, 248, 1);
+            color: #ffffff;
+            border-color: rgba(56, 189, 248, 0.9);
         }
         .dataset-table {
             width: 100%;
@@ -1500,9 +1516,9 @@ def _build_start_page(
             justify-content: flex-end;
         }
         .table-action-btn {
-            border: 1px solid rgba(148, 163, 184, 0.28);
-            background: rgba(12, 20, 33, 0.78);
-            color: var(--text);
+            border: 1px solid rgba(56, 189, 248, 0.6);
+            background: rgba(14, 165, 233, 0.85);
+            color: #ffffff;
             padding: 7px 12px;
             border-radius: 10px;
             font-size: 0.85rem;
@@ -1510,12 +1526,12 @@ def _build_start_page(
             transition: background 0.2s ease, border-color 0.2s ease;
         }
         .table-action-btn:hover {
-            border-color: rgba(56, 189, 248, 0.45);
-            background: rgba(8, 47, 73, 0.78);
+            border-color: rgba(56, 189, 248, 0.9);
+            background: rgba(56, 189, 248, 1);
         }
         .table-action-btn.danger {
             border-color: rgba(248, 113, 113, 0.45);
-            color: rgba(252, 165, 165, 0.95);
+            color: #ffffff;
         }
         .table-action-btn.danger:hover {
             border-color: rgba(248, 113, 113, 0.65);
@@ -1657,7 +1673,7 @@ def _build_start_page(
         <div id="landingView">
         <section class="hero">
             <div class="hero-content">
-                <p class="hero-eyebrow">Launch in minutes</p>
+                <p class="hero-eyebrow" style="color: #000;">Launch in minutes</p>
                 <h1 class="hero-title">Command center for resource-aware AutoML</h1>
 """
     )
@@ -1680,9 +1696,9 @@ def _build_start_page(
     parts.append(
         "                </div>\n"
         "                <div class=\"hero-pill-row\">\n"
-        "                    <span class=\"hero-pill\">Guided launch workflow</span>\n"
-        "                    <span class=\"hero-pill\">Constraint aware runs</span>\n"
-        "                    <span class=\"hero-pill\">Shareable dashboards</span>\n"
+        "                    <span class=\"hero-pill\" style=\"color: #000;\">Guided launch workflow</span>\n"
+        "                    <span class=\"hero-pill\" style=\"color: #000;\">Constraint aware runs</span>\n"
+        "                    <span class=\"hero-pill\" style=\"color: #000;\">Shareable dashboards</span>\n"
         "                </div>\n"
         "            </div>\n"
         "            <aside class=\"hero-card\">\n"
@@ -2972,13 +2988,13 @@ def _build_html_dashboard(
     parts.append(
         """
     <!DOCTYPE html>
-    <html lang=\"en\">
+    <html lang="en\">
     <head>
-        <meta charset=\"UTF-8\">
-        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+        <meta charset="UTF-8\">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0\">
         <title>AutoML Decision Dashboard</title>
-        <script src=\"https://cdn.plot.ly/plotly-latest.min.js\"></script>
-        <link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css\">
+        <script src="https://cdn.plot.ly/plotly-latest.min.js\"></script>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css\">
         <style>
             :root {
                 --bg: #050b18;
