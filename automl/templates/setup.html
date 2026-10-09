@@ -3,140 +3,250 @@
 
 {% block content %}
 {% set c = settings.constraints %}
-<div class="page-head">
+<header class="page-head reveal">
     <div>
-        <h1>New run</h1>
-        <p>Pick a dataset and target, set the limits a model must meet, then search.</p>
+        <p class="eyebrow"><span class="pulse" aria-hidden="true"></span>Experiment · new run</p>
+        <h1>Configure a search</h1>
+        <p class="lead">Point it at a table, choose what to predict, then set the budget every candidate model has to fit inside.</p>
     </div>
     {% if has_result %}
-    <a class="btn" href="/?view=dashboard">View latest results</a>
+    <a class="btn btn-outline" href="/?view=dashboard">
+        Latest results
+        <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg>
+    </a>
     {% endif %}
-</div>
+</header>
 
-<div class="stack">
-    <form id="runForm" class="card" autocomplete="off" novalidate>
-        <div class="grid-2 split">
-            <section class="card-body" aria-labelledby="dataHeading">
-                <h2 class="card-title section-title" id="dataHeading">Data</h2>
-
+<form id="runForm" class="config" autocomplete="off" novalidate>
+    <div class="steps">
+        <!-- 01 · Data -->
+        <section class="step reveal" style="--i:1" aria-labelledby="dataHeading">
+            <header class="step-head">
+                <span class="step-no">01</span>
+                <div>
+                    <h2 class="step-title" id="dataHeading">Data</h2>
+                    <p class="step-sub">The table the search trains on</p>
+                </div>
+            </header>
+            <div class="step-body">
                 <div class="field">
                     <label for="datasetSelect">Dataset</label>
                     <div class="inline-control">
-                        <select id="datasetSelect" class="select" disabled>
-                            <option value="">Loading…</option>
-                        </select>
+                        <div class="select-wrap">
+                            <select id="datasetSelect" class="select" disabled>
+                                <option value="">Loading…</option>
+                            </select>
+                        </div>
                         {% if sample_dataset %}
-                        <button type="button" class="btn" id="useSample">Use sample</button>
+                        <button type="button" class="btn btn-outline" id="useSample">Use sample</button>
                         {% endif %}
                     </div>
-                    <p class="hint" id="datasetSummary">&nbsp;</p>
                 </div>
+                <div class="readout" id="datasetStats" aria-live="polite">
+                    <div class="readout-cell"><span class="readout-k">Rows</span><span class="readout-v" data-stat="rows">—</span></div>
+                    <div class="readout-cell"><span class="readout-k">Columns</span><span class="readout-v" data-stat="cols">—</span></div>
+                    <div class="readout-cell"><span class="readout-k">Missing</span><span class="readout-v" data-stat="missing">—</span></div>
+                </div>
+                <p class="hint" id="datasetSummary">&nbsp;</p>
+            </div>
+        </section>
 
-                <div class="field">
-                    <label for="targetSelect">Target column</label>
-                    <select id="targetSelect" class="select" disabled>
-                        <option value="">Select a dataset first</option>
-                    </select>
-                    <p class="hint">Classification or regression is detected from this column.</p>
+        <!-- 02 · Objective -->
+        <section class="step reveal" style="--i:2" aria-labelledby="objHeading">
+            <header class="step-head">
+                <span class="step-no">02</span>
+                <div>
+                    <h2 class="step-title" id="objHeading">Objective</h2>
+                    <p class="step-sub">What to predict and how to judge it</p>
+                </div>
+            </header>
+            <div class="step-body">
+                <div class="field-row">
+                    <div class="field">
+                        <label for="targetSelect">Target column</label>
+                        <div class="select-wrap">
+                            <select id="targetSelect" class="select" disabled>
+                                <option value="">Select a dataset first</option>
+                            </select>
+                        </div>
+                        <p class="hint">Classification or regression is detected from this column.</p>
+                    </div>
+                    <div class="field">
+                        <label for="preferredMetrics">Primary metric</label>
+                        <input id="preferredMetrics" class="input mono" value="{{ (c.preferred_metrics or []) | join(', ') }}"
+                               placeholder="accuracy" spellcheck="false">
+                        <p class="hint">Ranks the models and is checked against the threshold.</p>
+                    </div>
                 </div>
 
                 <div class="field">
                     <label for="metricsInput">Metrics</label>
                     <input id="metricsInput" class="input mono" value="{{ settings.metrics | join(', ') }}"
                            placeholder="accuracy, f1, roc_auc" spellcheck="false">
-                    <p class="hint">Comma-separated. Classification: accuracy, balanced_accuracy, f1, precision, recall, roc_auc. Regression: r2, rmse, mse, mae, mape. Unsupported ones are skipped.</p>
-                </div>
-            </section>
-
-            <section class="card-body" aria-labelledby="limitsHeading">
-                <h2 class="card-title section-title" id="limitsHeading">Constraints</h2>
-
-                <div class="field-row">
-                    <div>
-                        <label for="maxTime">Max time per candidate</label>
-                        <div class="input-unit">
-                            <input id="maxTime" class="input mono" type="number" min="0" step="1"
-                                   value="{{ '%g' % c.max_training_time if c.max_training_time is not none else '' }}" placeholder="none">
-                            <span>s</span>
+                    <div class="chip-groups" aria-label="Toggle metrics">
+                        <div class="chip-group">
+                            <span class="chip-group-label">Classification</span>
+                            {% for m in ['accuracy', 'balanced_accuracy', 'f1', 'precision', 'recall', 'roc_auc'] %}
+                            <button type="button" class="chip" data-metric="{{ m }}" aria-pressed="false">{{ m }}</button>
+                            {% endfor %}
+                        </div>
+                        <div class="chip-group">
+                            <span class="chip-group-label">Regression</span>
+                            {% for m in ['r2', 'rmse', 'mse', 'mae', 'mape'] %}
+                            <button type="button" class="chip" data-metric="{{ m }}" aria-pressed="false">{{ m }}</button>
+                            {% endfor %}
                         </div>
                     </div>
-                    <div>
-                        <label for="maxRam">Max extra memory</label>
-                        <div class="input-unit">
-                            <input id="maxRam" class="input mono" type="number" min="0" step="1"
-                                   value="{{ '%g' % c.max_ram_mb if c.max_ram_mb is not none else '' }}" placeholder="none">
-                            <span>MB</span>
-                        </div>
-                    </div>
+                    <p class="hint">Click to toggle, or type a comma-separated list. Metrics that don't fit the task are skipped.</p>
                 </div>
+            </div>
+        </section>
 
-                <div class="field-row">
-                    <div>
+        <!-- 03 · Budget -->
+        <section class="step reveal" style="--i:3" aria-labelledby="limitsHeading">
+            <header class="step-head">
+                <span class="step-no">03</span>
+                <div>
+                    <h2 class="step-title" id="limitsHeading">Budget</h2>
+                    <p class="step-sub">Hard limits. Leave blank for no limit.</p>
+                </div>
+            </header>
+            <div class="step-body">
+                <div class="budget">
+                    <div class="budget-tile">
+                        <label for="maxTime">Time per candidate</label>
+                        <div class="budget-input">
+                            <input id="maxTime" class="input-bare mono" type="number" min="0" step="1"
+                                   value="{{ '%g' % c.max_training_time if c.max_training_time is not none else '' }}" placeholder="∞">
+                            <span class="unit">s</span>
+                        </div>
+                        <p class="hint">Covers every fold</p>
+                    </div>
+                    <div class="budget-tile">
+                        <label for="maxRam">Extra memory</label>
+                        <div class="budget-input">
+                            <input id="maxRam" class="input-bare mono" type="number" min="0" step="1"
+                                   value="{{ '%g' % c.max_ram_mb if c.max_ram_mb is not none else '' }}" placeholder="∞">
+                            <span class="unit">MB</span>
+                        </div>
+                        <p class="hint">Peak above baseline</p>
+                    </div>
+                    <div class="budget-tile">
                         <label for="minPerf">Performance threshold</label>
-                        <input id="minPerf" class="input mono" type="number" min="0" step="0.01"
-                               value="{{ '%g' % c.min_performance if c.min_performance is not none else '' }}" placeholder="none">
+                        <div class="budget-input">
+                            <input id="minPerf" class="input-bare mono" type="number" min="0" step="0.01"
+                                   value="{{ '%g' % c.min_performance if c.min_performance is not none else '' }}" placeholder="—">
+                        </div>
+                        <p class="hint">Min for scores, max for errors</p>
                     </div>
-                    <div>
-                        <label for="cvFolds">Cross-validation folds</label>
-                        <input id="cvFolds" class="input mono" type="number" min="2" max="20" step="1" value="{{ settings.cv_folds }}">
+                    <div class="budget-tile">
+                        <label for="cvFolds">CV folds</label>
+                        <div class="budget-input stepper">
+                            <button type="button" class="step-btn" data-step="-1" aria-label="Fewer folds">
+                                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8"/></svg>
+                            </button>
+                            <input id="cvFolds" class="input-bare mono" type="number" min="2" max="20" step="1" value="{{ settings.cv_folds }}">
+                            <button type="button" class="step-btn" data-step="1" aria-label="More folds">
+                                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8M8 4v8"/></svg>
+                            </button>
+                        </div>
+                        <p class="hint">2 to 20</p>
                     </div>
                 </div>
-                <p class="hint">The threshold is a minimum for scores (accuracy) and a maximum for errors (rmse). Time covers all folds.</p>
-
-                <div class="field">
-                    <label for="preferredMetrics">Primary metric</label>
-                    <input id="preferredMetrics" class="input mono" value="{{ (c.preferred_metrics or []) | join(', ') }}"
-                           placeholder="accuracy" spellcheck="false">
-                    <p class="hint">Ranks the models and is checked against the threshold.</p>
-                </div>
-
-                <div class="field">
-                    <label class="checkbox">
-                        <input id="interpretable" type="checkbox" {% if c.interpretability_required %}checked{% endif %}>
-                        <span>Interpretable models only
-                            <span class="hint" style="display:block;margin:0">Logistic regression or elastic net.</span>
-                        </span>
-                    </label>
-                </div>
-            </section>
-        </div>
-
-        <div class="run-bar">
-            <button type="submit" class="btn btn-primary" id="runButton">Run search</button>
-            <span class="run-status" id="runStatus" role="status" aria-live="polite">Constraints are saved when a run starts.</span>
-            <button type="button" class="btn btn-ghost btn-sm" id="resetDefaults" style="margin-left:auto">Reset to defaults</button>
-        </div>
-    </form>
-
-    <section class="card drop-target" id="datasetsCard" aria-labelledby="datasetsHeading">
-        <div class="card-head">
-            <div>
-                <h2 class="card-title" id="datasetsHeading">Datasets</h2>
-                <p class="card-sub">{{ allowed_extensions | join(', ') }} · up to {{ max_upload_mb }} MB · or drop a file here</p>
             </div>
-            <div>
-                <input type="file" id="fileInput" class="sr-only" accept="{% for ext in allowed_extensions %}.{{ ext }}{% if not loop.last %},{% endif %}{% endfor %}">
-                <label for="fileInput" class="btn" style="margin:0" id="uploadLabel">Upload file</label>
+        </section>
+
+        <!-- 04 · Search space -->
+        <section class="step reveal" style="--i:4" aria-labelledby="spaceHeading">
+            <header class="step-head">
+                <span class="step-no">04</span>
+                <div>
+                    <h2 class="step-title" id="spaceHeading">Search space</h2>
+                    <p class="step-sub">Which model families compete</p>
+                </div>
+            </header>
+            <div class="step-body">
+                <label class="switch-row" for="interpretable">
+                    <span>
+                        <span class="switch-title">Interpretable models only</span>
+                        <span class="hint">Restrict to linear models whose coefficients can be read directly.</span>
+                    </span>
+                    <span class="switch">
+                        <input id="interpretable" type="checkbox" role="switch" {% if c.interpretability_required %}checked{% endif %}>
+                        <span class="switch-track" aria-hidden="true"></span>
+                    </span>
+                </label>
+                <ul class="families" id="families" aria-label="Model families">
+                    <li data-interp="true"><span class="fam-glyph" aria-hidden="true">LR</span>Logistic regression</li>
+                    <li data-interp="true"><span class="fam-glyph" aria-hidden="true">EN</span>Elastic net</li>
+                    <li data-interp="false"><span class="fam-glyph" aria-hidden="true">RF</span>Random forest</li>
+                    <li data-interp="false"><span class="fam-glyph" aria-hidden="true">GB</span>Gradient boosting</li>
+                    <li data-interp="false"><span class="fam-glyph" aria-hidden="true">XG</span>XGBoost <span class="fam-note">if installed</span></li>
+                </ul>
             </div>
+        </section>
+    </div>
+
+    <aside class="manifest reveal" style="--i:2" id="manifest" aria-labelledby="manifestHeading">
+        <div class="manifest-inner">
+            <header class="manifest-head">
+                <h2 id="manifestHeading">Run manifest</h2>
+                <span class="manifest-state" id="manifestState">ready</span>
+            </header>
+            <dl class="spec">
+                <div><dt>dataset</dt><dd data-m="dataset">—</dd></div>
+                <div><dt>target</dt><dd data-m="target">—</dd></div>
+                <div><dt>rank by</dt><dd data-m="primary">—</dd></div>
+                <div><dt>metrics</dt><dd data-m="metrics">—</dd></div>
+                <div class="spec-rule" aria-hidden="true"></div>
+                <div><dt>time cap</dt><dd data-m="time">—</dd></div>
+                <div><dt>memory cap</dt><dd data-m="ram">—</dd></div>
+                <div><dt>threshold</dt><dd data-m="perf">—</dd></div>
+                <div><dt>cv folds</dt><dd data-m="folds">—</dd></div>
+                <div><dt>families</dt><dd data-m="families">—</dd></div>
+            </dl>
+
+            <div class="scan" aria-hidden="true"><span></span></div>
+
+            <button type="submit" class="btn btn-primary btn-run" id="runButton">Run search</button>
+            <p class="run-status" id="runStatus" role="status" aria-live="polite">Constraints are saved when a run starts.</p>
+            <button type="button" class="btn btn-ghost btn-sm btn-block" id="resetDefaults">Reset to defaults</button>
         </div>
-        <div class="notice" id="datasetNotice" role="status" aria-live="polite" hidden style="margin:12px 16px 0"></div>
-        <div class="table-wrap">
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th scope="col">Name</th>
-                        <th scope="col" class="num">Size</th>
-                        <th scope="col">Modified</th>
-                        <th scope="col"><span class="sr-only">Actions</span></th>
-                    </tr>
-                </thead>
-                <tbody id="datasetRows">
-                    <tr><td colspan="4" class="empty">Loading…</td></tr>
-                </tbody>
-            </table>
+    </aside>
+</form>
+
+<section class="library drop-target reveal" style="--i:5" id="datasetsCard" aria-labelledby="datasetsHeading">
+    <header class="section-head">
+        <div>
+            <h2 class="section-title" id="datasetsHeading">Dataset library</h2>
+            <p class="section-sub mono">{{ allowed_extensions | join(' · ') }} · ≤ {{ max_upload_mb }} MB</p>
         </div>
-    </section>
-</div>
+        <div>
+            <input type="file" id="fileInput" class="sr-only" accept="{% for ext in allowed_extensions %}.{{ ext }}{% if not loop.last %},{% endif %}{% endfor %}">
+            <label for="fileInput" class="btn btn-outline" id="uploadLabel">Upload file</label>
+        </div>
+    </header>
+    <div class="drop-hint" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+        <span>Drop a file anywhere on this panel to add it</span>
+    </div>
+    <div class="notice" id="datasetNotice" role="status" aria-live="polite" hidden></div>
+    <div class="table-wrap">
+        <table class="table files">
+            <thead>
+                <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col" class="num">Size</th>
+                    <th scope="col">Modified</th>
+                    <th scope="col"><span class="sr-only">Actions</span></th>
+                </tr>
+            </thead>
+            <tbody id="datasetRows">
+                <tr><td colspan="4" class="empty">Loading…</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
 
 <script id="setupData" type="application/json">{{ {"defaults": defaults, "sample": sample_dataset} | tojson }}</script>
 {% endblock %}

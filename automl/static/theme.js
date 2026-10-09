@@ -1,8 +1,7 @@
-// Cycles the colour theme between system, light and dark and remembers the choice.
+// Theme switch: system, light or dark, remembered across visits.
 (function () {
     const KEY = "automl-theme";
-    const order = ["system", "light", "dark"];
-    const button = document.getElementById("themeToggle");
+    const buttons = Array.from(document.querySelectorAll("[data-theme-set]"));
 
     function read() {
         try {
@@ -18,24 +17,21 @@
         } else {
             document.documentElement.setAttribute("data-theme", theme);
         }
-        if (button) {
-            button.textContent = "Theme: " + theme;
-        }
+        buttons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.themeSet === theme)));
         document.dispatchEvent(new CustomEvent("themechange"));
     }
 
-    let current = read();
-    apply(current);
+    apply(read());
 
-    if (button) {
+    buttons.forEach((button) =>
         button.addEventListener("click", function () {
-            current = order[(order.indexOf(current) + 1) % order.length];
+            const theme = button.dataset.themeSet;
             try {
-                localStorage.setItem(KEY, current);
+                localStorage.setItem(KEY, theme);
             } catch (e) {}
-            apply(current);
-        });
-    }
+            apply(theme);
+        })
+    );
 
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
         document.dispatchEvent(new CustomEvent("themechange"));

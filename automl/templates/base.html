@@ -12,29 +12,59 @@
             }
         } catch (e) {}
     </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Geist:wght@400..700&family=Geist+Mono:wght@400..600&display=swap">
     <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body>
-    <header class="topbar">
-        <div class="topbar-inner">
-            <a class="brand" href="/">AutoML <span class="brand-tag">resource-aware model search</span></a>
-            <nav class="nav" aria-label="Main">
-                <a href="/" {% if active == 'setup' %}aria-current="page"{% endif %}>Setup</a>
-                {% if has_result %}
-                <a href="/?view=dashboard" {% if active == 'results' %}aria-current="page"{% endif %}>Results</a>
-                {% else %}
-                <span class="nav-disabled" title="Run a search to see results">Results</span>
-                {% endif %}
-            </nav>
-            <div class="topbar-end">
-                <button type="button" class="btn btn-ghost btn-sm" id="themeToggle">Theme: system</button>
-            </div>
-        </div>
-    </header>
+<div class="shell">
+    <aside class="rail">
+        <a class="brand" href="/" aria-label="AutoML home">
+            <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+                <rect x="1" y="1" width="30" height="30" rx="7" class="bm-frame"/>
+                <rect x="8" y="15" width="4" height="10" rx="1" class="bm-bar"/>
+                <rect x="14" y="9" width="4" height="16" rx="1" class="bm-bar bm-hot"/>
+                <rect x="20" y="18" width="4" height="7" rx="1" class="bm-bar"/>
+            </svg>
+            <span class="brand-text">
+                <span class="brand-name">AutoML</span>
+                <span class="brand-tag">resource-aware search</span>
+            </span>
+        </a>
 
-    <main class="container">
+        <nav class="nav" aria-label="Main">
+            <p class="rail-label">Workflow</p>
+            <a href="/" {% if active == 'setup' %}aria-current="page"{% endif %}>
+                <span class="nav-idx">01</span><span class="nav-text">Configure</span>
+            </a>
+            {% if has_result %}
+            <a href="/?view=dashboard" {% if active == 'results' %}aria-current="page"{% endif %}>
+                <span class="nav-idx">02</span><span class="nav-text">Results</span>
+                <span class="nav-dot" aria-hidden="true"></span>
+            </a>
+            {% else %}
+            <span class="nav-disabled" title="Run a search to see results">
+                <span class="nav-idx">02</span><span class="nav-text">Results</span>
+            </span>
+            {% endif %}
+        </nav>
+
+        <div class="rail-foot">
+            <p class="rail-label" id="themeLabel">Appearance</p>
+            <div class="seg" role="group" aria-labelledby="themeLabel" id="themeSwitch">
+                <button type="button" data-theme-set="system" aria-pressed="false">Auto</button>
+                <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
+                <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+            </div>
+            <p class="rail-meta mono">time · memory · cpu</p>
+        </div>
+    </aside>
+
+    <main class="main">
         {% block content %}{% endblock %}
     </main>
+</div>
 
     <script src="{{ url_for('static', filename='theme.js') }}"></script>
     {% block scripts %}{% endblock %}
