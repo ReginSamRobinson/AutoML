@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}AutoML{% endblock %}</title>
+    <script>
+        try {
+            var savedTheme = localStorage.getItem("automl-theme");
+            if (savedTheme === "light" || savedTheme === "dark") {
+                document.documentElement.setAttribute("data-theme", savedTheme);
+            }
+        } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+    <header class="topbar">
+        <div class="topbar-inner">
+            <a class="brand" href="/">AutoML <span class="brand-tag">resource-aware model search</span></a>
+            <nav class="nav" aria-label="Main">
+                <a href="/" {% if active == 'setup' %}aria-current="page"{% endif %}>Setup</a>
+                {% if has_result %}
+                <a href="/?view=dashboard" {% if active == 'results' %}aria-current="page"{% endif %}>Results</a>
+                {% else %}
+                <span class="nav-disabled" title="Run a search to see results">Results</span>
+                {% endif %}
+            </nav>
+            <div class="topbar-end">
+                <button type="button" class="btn btn-ghost btn-sm" id="themeToggle">Theme: system</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script src="{{ url_for('static', filename='theme.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

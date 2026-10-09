@@ -81,11 +81,14 @@ Metrics that don't fit the detected task (e.g. `accuracy` on a regression target
 The AutoML framework includes an interactive web-based dashboard for visualizing results.
 
 ### Features
-- **Model Rankings**: Bar chart showing all models ranked by combined score
-- **Metric Comparison**: Performance visualization for the primary metric across models
-- **Resource Usage**: Training time and peak RAM consumption charts
-- **Full Leaderboard**: Detailed table with all metrics and resource metrics
-- **Best Model Summary**: Highlighted best model with key statistics
+- **Setup page**: upload datasets (or drag and drop), pick the target column, set constraints, and start a run
+- **Selected model**: the chosen model, its parameters and key figures, compared with the next best model type
+- **Trade-off chart**: primary metric vs. training time for every candidate; hollow points broke a limit
+- **Resource use**: training time, extra memory and CPU for the best configuration of each model type
+- **Leaderboard**: sortable table of every candidate with metrics, resource use and which limits it broke
+- Light and dark themes; works offline (no external fonts or CDNs)
+
+The UI lives in `automl/templates/` (Jinja) and `automl/static/` (CSS/JS).
 
 ### Using the Dashboard
 

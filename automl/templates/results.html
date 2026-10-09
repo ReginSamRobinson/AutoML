@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}Results · AutoML{% endblock %}
+
+{% macro status_cell(row) -%}
+    {%- if not row.violations -%}
+    <span class="status status-ok">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M3 8.5l3 3 7-7"/></svg>Meets limits
+    </span>
+    {%- else -%}
+    <span class="status status-bad" title="{{ row.violations | map(attribute='details') | join('\n') }}">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M4 4l8 8M12 4l-8 8"/></svg>{{ row.violations | map(attribute='label') | join(', ') }}
+    </span>
+    {%- endif -%}
+{%- endmacro %}
+
+{% block content %}
+{% set primary = view.primary %}
+<div class="page-head">
+    <div>
+        <h1>Results</h1>
+        <p>
+            {{ view.n_candidates }} candidates across {{ view.n_models }} model types ·
+            {{ view.n_passing }} met every limit{% if view.n_failed %} · {{ view.n_failed }} failed to train{% endif %} ·
+            ranked by {{ primary.label }} ({{ 'higher' if primary.higher_is_better else 'lower' }} is better)
+        </p>
+    </div>
+    <a class="btn" href="/">New run</a>
+</div>
+
+<div class="stack">
+    {% set s = view.selected %}
+    {% if s %}
+    <section class="card" aria-labelledby="selectedHeading">
+        <div class="summary-head">
+            <div>
+                <p class="summary-kicker">Selected model · rank {{ s.rank }}</p>
+                <h2 class="summary-title" id="selectedHeading">{{ s.label }}</h2>
+                <p class="summary-params mono">{{ s.params }}</p>
+            </div>
+            {{ status_cell(s) }}
+        </div>
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-label">{{ primary.label }}</div>
+                <div class="stat-value">{{ s.metrics[primary.key] | fmt }}</div>
+                <div class="stat-sub">± {{ s.stds[primary.key] | fmt }} across folds</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Score</div>
+                <div class="stat-value">{{ s.score | fmt('{:.3f}') }}</div>
+                <div class="stat-sub">quality vs. cost</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Training time</div>
+                <div class="stat-value">{{ s.time | fmt('{:.2f}') }} s</div>
+                <div class="stat-sub">all folds</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Extra memory</div>
+                <div class="stat-value">{{ s.ram | fmt('{:.1f}') }} MB</div>
+                <div class="stat-sub">peak above baseline</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">CPU</div>
+                <div class="stat-value">{{ s.cpu | fmt('{:.0f}') }}%</div>
+                <div class="stat-sub">avg · 100% = 1 core</div>
+            </div>
+        </div>
+    </section>
+
+    {% if view.comparison %}
+    {% set r = view.runner_up %}
+    <section class="card" aria-labelledby="compareHeading">
+        <div class="card-head">
+            <div>
+                <h2 class="card-title" id="compareHeading">Against the next best model type</h2>
+                <p class="card-sub">{{ r.label }}, rank {{ r.rank }} · <span class="mono">{{ r.params }}</span></p>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="table compare">
+                <thead>
+                    <tr>
+                        <th scope="col"></th>
+                        <th scope="col" class="num">{{ s.label }}</th>
+                        <th scope="col" class="num">{{ r.label }}</th>
+                        <th scope="col" class="num">Difference</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in view.comparison %}
+                    <tr>
+                        <th scope="row" style="background:none;font-size:13px;color:var(--text-2)">{{ row.label }}</th>
+                        <td class="num">{{ row.selected }}</td>
+                        <td class="num">{{ row.other }}</td>
+                        <td class="num {{ 'is-better' if row.better == true else 'is-worse' if row.better == false else '' }}">{{ row.delta or '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
+    {% else %}
+    <div class="notice is-error" role="alert">
+        <p class="notice-title">No candidate met every limit</p>
+        {% if view.closest %}
+        <p>The highest-ranked candidate was {{ view.closest.label }} ({{ view.closest.violations | map(attribute='details') | join('; ') }}).
+            Loosen the constraints on the <a href="/">setup page</a> and run again.</p>
+        {% else %}
+        <p>No candidates were evaluated.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if view.rows %}
+    <div class="grid-charts">
+        <section class="card" aria-labelledby="tradeoffHeading">
+            <div class="card-head">
+                <div>
+                    <h2 class="card-title" id="tradeoffHeading">{{ primary.label }} vs. training time</h2>
+                    <p class="card-sub">Each point is one candidate. Hollow points broke a limit.</p>
+                </div>
+            </div>
+            <div class="card-body" style="padding:8px">
+                <div class="chart" id="tradeoffChart" role="img" aria-label="Scatter plot of {{ primary.label }} against training time for every candidate"></div>
+            </div>
+        </section>
+        <section class="card" aria-labelledby="resourceHeading">
+            <div class="card-head">
+                <div>
+                    <h2 class="card-title" id="resourceHeading">Resource use by model type</h2>
+                    <p class="card-sub">Best configuration of each type</p>
+                </div>
+            </div>
+            <div class="card-body" style="padding:8px">
+                <div class="chart" id="resourceChart" role="img" aria-label="Bar charts of training time, extra memory and CPU for each model type"></div>
+            </div>
+        </section>
+    </div>
+
+    <section class="card" aria-labelledby="boardHeading">
+        <div class="card-head">
+            <div>
+                <h2 class="card-title" id="boardHeading">Leaderboard</h2>
+                <p class="card-sub" id="boardCount"></p>
+            </div>
+            <label class="checkbox" style="font-size:13px">
+                <input type="checkbox" id="bestOnly" checked>
+                <span>Best configuration per model type</span>
+            </label>
+        </div>
+        <div class="table-wrap">
+            <table class="table" id="leaderboard">
+                <thead>
+                    <tr>
+                        <th scope="col" class="num" aria-sort="ascending"><button type="button" class="sort-btn" data-key="rank" data-type="num">#</button></th>
+                        <th scope="col"><button type="button" class="sort-btn" data-key="model" data-type="text">Model</button></th>
+                        <th scope="col">Parameters</th>
+                        {% for m in view.metrics %}
+                        <th scope="col" class="num"><button type="button" class="sort-btn" data-key="m-{{ m.key }}" data-type="num">{{ m.label }}</button></th>
+                        {% endfor %}
+                        <th scope="col" class="num"><button type="button" class="sort-btn" data-key="score" data-type="num">Score</button></th>
+                        <th scope="col" class="num"><button type="button" class="sort-btn" data-key="time" data-type="num">Time</button></th>
+                        <th scope="col" class="num"><button type="button" class="sort-btn" data-key="ram" data-type="num">Memory</button></th>
+                        <th scope="col" class="num"><button type="button" class="sort-btn" data-key="cpu" data-type="num">CPU</button></th>
+                        <th scope="col">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in view.rows %}
+                    <tr class="{{ 'is-selected' if row.selected }}" data-best="{{ 'true' if row.best_of_model else 'false' }}"
+                        data-rank="{{ row.rank }}" data-model="{{ row.label }}"
+                        {% for m in view.metrics %}data-m-{{ m.key }}="{{ row.metrics[m.key] if row.metrics[m.key] is not none else '' }}" {% endfor %}
+                        data-score="{{ row.score if row.score is not none else '' }}" data-time="{{ row.time if row.time is not none else '' }}"
+                        data-ram="{{ row.ram if row.ram is not none else '' }}" data-cpu="{{ row.cpu if row.cpu is not none else '' }}">
+                        <td class="num">{{ row.rank }}</td>
+                        <td>{{ row.label }}{% if row.selected %}<span class="tag">selected</span>{% endif %}</td>
+                        <td class="col-params mono" title="{{ row.params }}">{{ row.params }}</td>
+                        {% for m in view.metrics %}
+                        <td class="num" title="± {{ row.stds[m.key] | fmt }}">{{ row.metrics[m.key] | fmt }}</td>
+                        {% endfor %}
+                        <td class="num">{{ row.score | fmt('{:.3f}') }}</td>
+                        <td class="num">{{ row.time | fmt('{:.2f}') }} s</td>
+                        <td class="num">{{ row.ram | fmt('{:.1f}') }} MB</td>
+                        <td class="num">{{ row.cpu | fmt('{:.0f}') }}%</td>
+                        <td>{{ status_cell(row) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="card-foot">
+            Score = 0.7 × {{ primary.label }} − 0.3 × resource cost (time 50%, memory 30%, CPU 20%), each scaled 0–1 within this run,
+            minus 0.1 per broken limit. Metric values are cross-validation means; hover a value for its spread.
+        </p>
+    </section>
+    {% endif %}
+</div>
+
+<p class="footer">Generated {{ view.generated_at }}</p>
+
+<script id="resultsData" type="application/json">{{ {
+    "primary": view.primary,
+    "points": view.rows | selectattr("failed", "false") | list,
+} | tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('plotly_js') }}"></script>
+<script src="{{ url_for('static', filename='results.js') }}"></script>
+{% endblock %}

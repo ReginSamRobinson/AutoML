@@ -45,6 +45,9 @@ Repository = "https://github.com/ReginSamRobinson/AutoML"
 [tool.setuptools.packages.find]
 include = ["automl*"]
 
+[tool.setuptools.package-data]
+automl = ["templates/*.html", "static/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

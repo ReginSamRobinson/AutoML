@@ -68,3 +68,17 @@ def test_run_on_regression_upload_with_default_settings(client) -> None:
     body = response.get_json()
     assert response.status_code == 200, body
     assert body["best_result"]["primary_metric"] == "rmse"
+
+
+def test_settings_file_is_not_a_dataset(client) -> None:
+    client.get("/")  # settings.json is written on startup
+    names = [item["name"] for item in client.get("/api/datasets").get_json()["datasets"]]
+    assert "settings.json" not in names
+    assert client.delete("/api/datasets/settings.json").status_code == 404
+
+
+def test_results_page_shows_selected_model_and_leaderboard(client, iris_result: AutoMLResult) -> None:
+    page = client.get("/?view=dashboard").get_data(as_text=True)
+    assert 'id="leaderboard"' in page
+    assert iris_result.best_result is not None
+    assert "Selected model" in page

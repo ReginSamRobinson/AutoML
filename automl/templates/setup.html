@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}New run · AutoML{% endblock %}
+
+{% block content %}
+{% set c = settings.constraints %}
+<div class="page-head">
+    <div>
+        <h1>New run</h1>
+        <p>Pick a dataset and target, set the limits a model must meet, then search.</p>
+    </div>
+    {% if has_result %}
+    <a class="btn" href="/?view=dashboard">View latest results</a>
+    {% endif %}
+</div>
+
+<div class="stack">
+    <form id="runForm" class="card" autocomplete="off" novalidate>
+        <div class="grid-2 split">
+            <section class="card-body" aria-labelledby="dataHeading">
+                <h2 class="card-title section-title" id="dataHeading">Data</h2>
+
+                <div class="field">
+                    <label for="datasetSelect">Dataset</label>
+                    <div class="inline-control">
+                        <select id="datasetSelect" class="select" disabled>
+                            <option value="">Loading…</option>
+                        </select>
+                        {% if sample_dataset %}
+                        <button type="button" class="btn" id="useSample">Use sample</button>
+                        {% endif %}
+                    </div>
+                    <p class="hint" id="datasetSummary">&nbsp;</p>
+                </div>
+
+                <div class="field">
+                    <label for="targetSelect">Target column</label>
+                    <select id="targetSelect" class="select" disabled>
+                        <option value="">Select a dataset first</option>
+                    </select>
+                    <p class="hint">Classification or regression is detected from this column.</p>
+                </div>
+
+                <div class="field">
+                    <label for="metricsInput">Metrics</label>
+                    <input id="metricsInput" class="input mono" value="{{ settings.metrics | join(', ') }}"
+                           placeholder="accuracy, f1, roc_auc" spellcheck="false">
+                    <p class="hint">Comma-separated. Classification: accuracy, balanced_accuracy, f1, precision, recall, roc_auc. Regression: r2, rmse, mse, mae, mape. Unsupported ones are skipped.</p>
+                </div>
+            </section>
+
+            <section class="card-body" aria-labelledby="limitsHeading">
+                <h2 class="card-title section-title" id="limitsHeading">Constraints</h2>
+
+                <div class="field-row">
+                    <div>
+                        <label for="maxTime">Max time per candidate</label>
+                        <div class="input-unit">
+                            <input id="maxTime" class="input mono" type="number" min="0" step="1"
+                                   value="{{ '%g' % c.max_training_time if c.max_training_time is not none else '' }}" placeholder="none">
+                            <span>s</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="maxRam">Max extra memory</label>
+                        <div class="input-unit">
+                            <input id="maxRam" class="input mono" type="number" min="0" step="1"
+                                   value="{{ '%g' % c.max_ram_mb if c.max_ram_mb is not none else '' }}" placeholder="none">
+                            <span>MB</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="field-row">
+                    <div>
+                        <label for="minPerf">Performance threshold</label>
+                        <input id="minPerf" class="input mono" type="number" min="0" step="0.01"
+                               value="{{ '%g' % c.min_performance if c.min_performance is not none else '' }}" placeholder="none">
+                    </div>
+                    <div>
+                        <label for="cvFolds">Cross-validation folds</label>
+                        <input id="cvFolds" class="input mono" type="number" min="2" max="20" step="1" value="{{ settings.cv_folds }}">
+                    </div>
+                </div>
+                <p class="hint">The threshold is a minimum for scores (accuracy) and a maximum for errors (rmse). Time covers all folds.</p>
+
+                <div class="field">
+                    <label for="preferredMetrics">Primary metric</label>
+                    <input id="preferredMetrics" class="input mono" value="{{ (c.preferred_metrics or []) | join(', ') }}"
+                           placeholder="accuracy" spellcheck="false">
+                    <p class="hint">Ranks the models and is checked against the threshold.</p>
+                </div>
+
+                <div class="field">
+                    <label class="checkbox">
+                        <input id="interpretable" type="checkbox" {% if c.interpretability_required %}checked{% endif %}>
+                        <span>Interpretable models only
+                            <span class="hint" style="display:block;margin:0">Logistic regression or elastic net.</span>
+                        </span>
+                    </label>
+                </div>
+            </section>
+        </div>
+
+        <div class="run-bar">
+            <button type="submit" class="btn btn-primary" id="runButton">Run search</button>
+            <span class="run-status" id="runStatus" role="status" aria-live="polite">Constraints are saved when a run starts.</span>
+            <button type="button" class="btn btn-ghost btn-sm" id="resetDefaults" style="margin-left:auto">Reset to defaults</button>
+        </div>
+    </form>
+
+    <section class="card drop-target" id="datasetsCard" aria-labelledby="datasetsHeading">
+        <div class="card-head">
+            <div>
+                <h2 class="card-title" id="datasetsHeading">Datasets</h2>
+                <p class="card-sub">{{ allowed_extensions | join(', ') }} · up to {{ max_upload_mb }} MB · or drop a file here</p>
+            </div>
+            <div>
+                <input type="file" id="fileInput" class="sr-only" accept="{% for ext in allowed_extensions %}.{{ ext }}{% if not loop.last %},{% endif %}{% endfor %}">
+                <label for="fileInput" class="btn" style="margin:0" id="uploadLabel">Upload file</label>
+            </div>
+        </div>
+        <div class="notice" id="datasetNotice" role="status" aria-live="polite" hidden style="margin:12px 16px 0"></div>
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col" class="num">Size</th>
+                        <th scope="col">Modified</th>
+                        <th scope="col"><span class="sr-only">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody id="datasetRows">
+                    <tr><td colspan="4" class="empty">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<script id="setupData" type="application/json">{{ {"defaults": defaults, "sample": sample_dataset} | tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='setup.js') }}"></script>
+{% endblock %}
