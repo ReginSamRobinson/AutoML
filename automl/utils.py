@@ -8,8 +8,10 @@ from typing import Dict
 _METRIC_ALIASES: Dict[str, str] = {
     "f1_score": "f1",
     "root_mean_squared_error": "rmse",
-    "mean_squared_error": "rmse",
     "neg_root_mean_squared_error": "rmse",
+    "mean_squared_error": "mse",
+    "neg_mean_squared_error": "mse",
+    "mean_absolute_error": "mae",
     "neg_mean_absolute_error": "mae",
     "mean_absolute_percentage_error": "mape",
     "neg_mean_absolute_percentage_error": "mape",

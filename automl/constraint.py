@@ -66,11 +66,13 @@ class ConstraintValidator:
                     and primary_value > self.constraints.min_performance
                 )
             ):
+                value = float("nan") if primary_value is None else primary_value
+                comparison = "is below minimum" if higher_is_better else "exceeds maximum"
                 violations.append(
                     ConstraintViolation(
                         name="performance",
                         details=(
-                            f"Metric '{primary_metric}' {(primary_value or float('nan')):.4f} is below minimum "
+                            f"Metric '{primary_metric}' {value:.4f} {comparison} "
                             f"{self.constraints.min_performance:.4f}"
                         ),
                     )

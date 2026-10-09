@@ -11,16 +11,15 @@ Resource-Aware AutoML is a production-ready Python framework that automates mode
 
 ## Installation
 1. Ensure Python 3.9 or later is available.
-2. Install project dependencies:
+2. Install the core engine plus the extras you need:
 
 ```bash
-pip install -e .[dev]
-```
-
-3. (Optional) Install XGBoost for gradient-boosted tree models with CPU acceleration:
-
-```bash
-pip install xgboost
+pip install -e .                 # core engine only
+pip install -e ".[dashboard]"    # + Flask/Plotly web dashboard, xlsx/parquet uploads
+pip install -e ".[xgboost]"      # + XGBoost models
+pip install -e ".[qt]"           # + native Qt window (PySide6)
+pip install -e ".[desktop]"      # + pywebview window
+pip install -e ".[dev]"          # everything needed to run the tests
 ```
 
 ## Quick Start
@@ -30,13 +29,13 @@ import pandas as pd
 from sklearn.datasets import load_breast_cancer
 
 from automl import (
-	AutoMLEngine,
-	ConstraintValidator,
-	DatasetAnalyzer,
-	Evaluator,
-	ModelRegistry,
-	ResourceConstraints,
-	ResourceMonitor,
+    AutoMLEngine,
+    ConstraintValidator,
+    DatasetAnalyzer,
+    Evaluator,
+    ModelRegistry,
+    ResourceConstraints,
+    ResourceMonitor,
 )
 
 dataset = load_breast_cancer(as_frame=True)
@@ -44,27 +43,38 @@ X: pd.DataFrame = dataset.data
 y: pd.Series = dataset.target
 
 engine = AutoMLEngine(
-	analyzer=DatasetAnalyzer(),
-	registry=ModelRegistry(),
-	validator_factory=lambda c: ConstraintValidator(c),
-	evaluator=Evaluator(cv_folds=5),
-	monitor=ResourceMonitor(),
+    analyzer=DatasetAnalyzer(),
+    registry=ModelRegistry(),
+    validator_factory=lambda c: ConstraintValidator(c),
+    evaluator=Evaluator(cv_folds=5),
+    monitor=ResourceMonitor(),
 )
 
 constraints = ResourceConstraints(
-	max_training_time=120.0,
-	max_ram_mb=4096.0,
-	min_performance=0.9,
-	interpretability_required=False,
-	preferred_metrics=["accuracy"],
+    max_training_time=120.0,
+    max_ram_mb=4096.0,
+    min_performance=0.9,
+    interpretability_required=False,
+    preferred_metrics=["accuracy"],
 )
 
 result = engine.run(X, y, constraints=constraints, metrics=["accuracy", "f1", "roc_auc"])
 
 print(f"Best model: {result.best_result.model_name}")
 for entry in result.leaderboard:
-	print(entry)
+    print(entry)
 ```
+
+### Constraint semantics
+
+| Field | Meaning |
+| --- | --- |
+| `max_training_time` | Seconds for one candidate, all CV folds together |
+| `max_ram_mb` | Extra memory a candidate uses above the process baseline |
+| `min_performance` | Lower bound for score metrics (accuracy, f1, …); upper bound for error metrics (rmse, mae, …). Ignored with a warning if its metric does not fit the task |
+| `max_total_time` | Seconds for the whole search; no new candidates start once spent |
+
+Metrics that don't fit the detected task (e.g. `accuracy` on a regression target) are skipped with a warning, falling back to `accuracy` / `rmse`.
 
 ## Dashboard & Visualization
 

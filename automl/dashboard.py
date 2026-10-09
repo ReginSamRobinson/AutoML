@@ -12,7 +12,8 @@ from typing import Optional
 
 import pandas as pd
 import plotly.graph_objects as go
-from flask import Flask, jsonify, request, render_template_string
+from flask import Flask, Response, jsonify, request
+from plotly.offline import get_plotlyjs
 from plotly.subplots import make_subplots
 from werkzeug.serving import make_server
 from werkzeug.utils import secure_filename
@@ -28,15 +29,16 @@ from .resource_monitor import ResourceMonitor
 from .visualizer import ResultVisualizer
 from .data_upload import (
     ALLOWED_EXTENSIONS,
+    MAX_FILE_SIZE,
+    SAMPLE_DATASET_FILENAME,
     allowed_file,
     create_upload_folder,
+    ensure_sample_dataset,
     get_dataset_preview,
     load_dataset,
+    unique_upload_path,
     validate_dataset,
 )
-
-
-SAMPLE_DATASET_FILENAME = "sample_breast_cancer.csv"
 
 
 DEFAULT_DASHBOARD_SETTINGS: dict[str, object] = {
@@ -50,6 +52,14 @@ DEFAULT_DASHBOARD_SETTINGS: dict[str, object] = {
         "preferred_metrics": ["accuracy"],
     },
 }
+
+
+def _best_per_model(frame: pd.DataFrame) -> pd.DataFrame:
+    """Keep the first (best-ranked) row for each model name."""
+
+    if frame.empty or "Model" not in frame.columns:
+        return frame
+    return frame.drop_duplicates(subset="Model", keep="first").reset_index(drop=True)
 
 
 def _deep_merge(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
@@ -127,44 +137,6 @@ def _unique_metrics(metrics: list[str]) -> list[str]:
     return unique
 
 
-def _ensure_sample_dataset(upload_dir: Path) -> bool:
-    """Make sure the preloaded sample dataset is available for the start page."""
-
-    sample_path = upload_dir / SAMPLE_DATASET_FILENAME
-    if sample_path.exists():
-        return True
-
-    try:
-        from sklearn.datasets import load_breast_cancer
-    except ImportError:
-        return False
-
-    try:
-        dataset = load_breast_cancer(as_frame=True)
-        if getattr(dataset, "frame", None) is not None:
-            frame = dataset.frame.copy()
-        else:
-            feature_names = getattr(dataset, "feature_names", None)
-            features = pd.DataFrame(dataset.data, columns=feature_names)
-            if features.empty:
-                features = pd.DataFrame(dataset.data)
-            frame = features.assign(target=dataset.target)
-
-        if "target" not in frame.columns:
-            frame = frame.assign(target=dataset.target)
-
-        frame.to_csv(sample_path, index=False)
-    except Exception:
-        if sample_path.exists():
-            try:
-                sample_path.unlink()
-            except OSError:
-                pass
-        return False
-
-    return True
-
-
 def _sanitize_settings_payload(
     base_settings: dict[str, object], payload: dict[str, object]
 ) -> dict[str, object]:
@@ -220,17 +192,25 @@ def _sanitize_settings_payload(
     return sanitized
 
 
-def create_app(result: Optional[AutoMLResult] = None) -> Flask:
-    """Create and configure the Flask application."""
+def create_app(result: Optional[AutoMLResult] = None, upload_dir: Optional[str | Path] = None) -> Flask:
+    """Create and configure the Flask application.
+
+    upload_dir overrides where datasets and settings.json are stored
+    (defaults to the project's uploads/ folder).
+    """
     app = Flask(__name__)
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
-    upload_folder = create_upload_folder()
+    if upload_dir is None:
+        upload_folder = create_upload_folder()
+    else:
+        Path(upload_dir).mkdir(parents=True, exist_ok=True)
+        upload_folder = str(upload_dir)
     upload_path = Path(upload_folder)
-    _ensure_sample_dataset(upload_path)
+    ensure_sample_dataset(upload_path)
 
     app.config["UPLOAD_FOLDER"] = upload_folder
-    app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB
+    app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE
 
     settings_path = upload_path / "settings.json"
     try:
@@ -273,18 +253,22 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
 
             return _build_html_dashboard(leaderboard_df, resource_df, best_model, current)
 
-        _ensure_sample_dataset(upload_path)
-        sample_dataset = (
-            SAMPLE_DATASET_FILENAME
-            if (upload_path / SAMPLE_DATASET_FILENAME).exists()
-            else None
-        )
+        sample_dataset = SAMPLE_DATASET_FILENAME if ensure_sample_dataset(upload_path) else None
         return _build_start_page(
             get_settings(),
             sorted(ALLOWED_EXTENSIONS),
             has_result=has_result,
             sample_dataset=sample_dataset,
         )
+
+    @app.route("/vendor/plotly.min.js")
+    def plotly_js():
+        """Serve the plotly.js bundled with the installed plotly package.
+
+        Keeps the browser library in sync with the figure JSON produced here
+        and works without internet access.
+        """
+        return Response(get_plotlyjs(), mimetype="application/javascript")
 
     @app.route("/api/leaderboard")
     def api_leaderboard():
@@ -305,11 +289,12 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
             return jsonify({"error": "No data"})
 
         visualizer = ResultVisualizer()
-        leaderboard_df = visualizer.leaderboard_to_dataframe(current)
+        # One bar per model family: its best-ranked configuration.
+        leaderboard_df = _best_per_model(visualizer.leaderboard_to_dataframe(current))
         if leaderboard_df.empty or "Combined Score" not in leaderboard_df.columns:
             return jsonify({"error": "No data"})
 
-        resource_df = visualizer.resource_usage_summary(current)
+        resource_df = _best_per_model(visualizer.resource_usage_summary(current))
 
         combined_scores = pd.to_numeric(leaderboard_df["Combined Score"], errors="coerce").fillna(0.0)
         score_range = combined_scores.max() - combined_scores.min()
@@ -402,7 +387,7 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
         if annotations:
             fig.update_layout(annotations=annotations)
 
-        return fig.to_json()
+        return Response(fig.to_json(), mimetype="application/json")
 
     @app.route("/api/charts/metrics")
     def chart_metrics():
@@ -508,7 +493,7 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
             plot_bgcolor="rgba(0,0,0,0)",
             font=dict(family="Inter, sans-serif", color="#e6edf7"),
         )
-        return fig.to_json()
+        return Response(fig.to_json(), mimetype="application/json")
 
     @app.route("/api/charts/resources")
     def chart_resources():
@@ -518,8 +503,8 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
             return jsonify({"error": "No data"})
 
         visualizer = ResultVisualizer()
-        resource_df = visualizer.resource_usage_summary(current)
-        leaderboard_df = visualizer.leaderboard_to_dataframe(current)
+        resource_df = _best_per_model(visualizer.resource_usage_summary(current))
+        leaderboard_df = _best_per_model(visualizer.leaderboard_to_dataframe(current))
 
         if resource_df.empty:
             return jsonify({"error": "No data"})
@@ -645,7 +630,7 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
         if annotations:
             fig.update_layout(annotations=annotations)
 
-        return fig.to_json()
+        return Response(fig.to_json(), mimetype="application/json")
 
     @app.route("/api/settings", methods=["GET", "POST"])
     def api_settings():
@@ -727,17 +712,11 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
         if not isinstance(metrics, list) or not metrics:
             metrics = DEFAULT_DASHBOARD_SETTINGS["metrics"]
 
-        cv_folds_value = sanitized.get("cv_folds", DEFAULT_DASHBOARD_SETTINGS["cv_folds"])
-        try:
-            cv_folds_int = max(2, int(cv_folds_value))
-        except (TypeError, ValueError):
-            cv_folds_int = DEFAULT_DASHBOARD_SETTINGS["cv_folds"]
-
         engine = AutoMLEngine(
             analyzer=DatasetAnalyzer(),
             registry=ModelRegistry(),
             validator_factory=lambda cfg: ConstraintValidator(cfg),
-            evaluator=Evaluator(cv_folds=cv_folds_int),
+            evaluator=Evaluator(cv_folds=sanitized["cv_folds"]),
             monitor=ResourceMonitor(),
         )
 
@@ -795,8 +774,10 @@ def create_app(result: Optional[AutoMLResult] = None) -> Flask:
                 return jsonify({'error': f'File type not allowed. Allowed: {", ".join(ALLOWED_EXTENSIONS)}'}), 400
             
             # Save file
-            filename = secure_filename(file.filename)
-            filepath = Path(app.config['UPLOAD_FOLDER']) / filename
+            filepath = unique_upload_path(
+                Path(app.config['UPLOAD_FOLDER']), secure_filename(file.filename)
+            )
+            filename = filepath.name
             file.save(str(filepath))
             
             # Load and validate dataset
@@ -1541,6 +1522,15 @@ def _build_start_page(
             setTimeout(() => toastEl.classList.remove('is-visible'), 3200);
         }
 
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         function formatBytes(bytes) {
             if (!Number.isFinite(bytes)) return '—';
             if (bytes === 0) return '0 B';
@@ -1624,18 +1614,19 @@ def _build_start_page(
             }
             datasetTableBody.innerHTML = datasets
                 .map((item) => {
+                    const name = escapeHtml(item.name);
                     const isSample = Boolean(sampleDatasetName) && item.name === sampleDatasetName;
                     const badge = isSample ? '<span class="table-badge">Sample</span>' : '';
                     const deleteButton = isSample
                         ? ''
-                        : `<button type="button" class="table-action-btn danger" data-delete-dataset="${item.name}">Delete</button>`;
-                    return `<tr data-dataset="${item.name}">
-                        <td>${item.name}${badge}</td>
+                        : `<button type="button" class="table-action-btn danger" data-delete-dataset="${name}">Delete</button>`;
+                    return `<tr data-dataset="${name}">
+                        <td>${name}${badge}</td>
                         <td>${formatBytes(item.size)}</td>
                         <td>${formatTimestamp(item.modified)}</td>
                         <td>
                             <div class="table-actions">
-                                <button type="button" class="table-action-btn" data-select-dataset="${item.name}">Select</button>
+                                <button type="button" class="table-action-btn" data-select-dataset="${name}">Select</button>
                                 ${deleteButton}
                             </div>
                         </td>
@@ -1656,7 +1647,7 @@ def _build_start_page(
             }
             datasetSelect.disabled = false;
             datasetSelect.innerHTML = datasets
-                .map((item) => `<option value="${item.name}">${item.name}</option>`)
+                .map((item) => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)}</option>`)
                 .join('');
 
             const datasetNames = datasets.map((item) => item.name);
@@ -1745,7 +1736,7 @@ def _build_start_page(
                 }
                 targetSelect.disabled = false;
                 targetSelect.innerHTML = columns
-                    .map((col) => `<option value="${col}">${col}</option>`)
+                    .map((col) => `<option value="${escapeHtml(col)}">${escapeHtml(col)}</option>`)
                     .join('');
 
                 const preferredTargets = ['target', 'label', 'labels', 'class', 'outcome', 'y'];
@@ -2579,7 +2570,7 @@ def _build_html_dashboard(
         <meta charset=\"UTF-8\">
         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
         <title>AutoML Decision Dashboard</title>
-        <script src=\"https://cdn.plot.ly/plotly-latest.min.js\"></script>
+        <script src=\"/vendor/plotly.min.js\"></script>
         <link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css\">
         <style>
             :root {
@@ -3215,7 +3206,13 @@ def _build_html_dashboard(
                     formData.append('file', file);
                     
                     var messageDiv = document.getElementById('uploadMessage');
-                    messageDiv.innerHTML = '<div class=\"upload-message\">⏳ Uploading and validating...</div>';
+                    function showUploadMessage(text, variant) {
+                        var box = document.createElement('div');
+                        box.className = 'upload-message' + (variant ? ' ' + variant : '');
+                        box.textContent = text;
+                        messageDiv.replaceChildren(box);
+                    }
+                    showUploadMessage('⏳ Uploading and validating...');
                     
                     fetch('/api/upload', {
                         method: 'POST',
@@ -3224,14 +3221,14 @@ def _build_html_dashboard(
                     .then(function(response) { return response.json(); })
                     .then(function(data) {
                         if (data.success) {
-                            messageDiv.innerHTML = '<div class=\"upload-message success\">✅ ' + data.message + '</div>';
+                            showUploadMessage('✅ ' + data.message, 'success');
                             setTimeout(closeUploadModal, 2500);
                         } else {
-                            messageDiv.innerHTML = '<div class=\"upload-message error\">❌ ' + data.error + '</div>';
+                            showUploadMessage('❌ ' + data.error, 'error');
                         }
                     })
                     .catch(function(error) {
-                        messageDiv.innerHTML = '<div class=\"upload-message error\">❌ Upload failed: ' + error + '</div>';
+                        showUploadMessage('❌ Upload failed: ' + error, 'error');
                     });
                 }
             </script>
@@ -3401,7 +3398,7 @@ def _build_html_dashboard(
     return html_output
 
 
-def run_dashboard(result: AutoMLResult, host: str = "127.0.0.1", port: int = 5000, debug: bool = False) -> None:
+def run_dashboard(result: Optional[AutoMLResult] = None, host: str = "127.0.0.1", port: int = 5000, debug: bool = False) -> None:
     """Run the dashboard server."""
     app = create_app(result)
     print(f"\n{'=' * 60}")

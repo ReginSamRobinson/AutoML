@@ -3,16 +3,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Tuple
+from typing import Callable, Dict, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
+from sklearn.metrics import f1_score, make_scorer, precision_score, recall_score
 from sklearn.model_selection import KFold, StratifiedKFold, cross_validate
 
 from .constraint import ConstraintViolation
 from .dataset_analysis import DatasetSummary
 from .resource_monitor import ResourceUsage
+
+
+CLASSIFICATION_METRICS = frozenset({"accuracy", "balanced_accuracy", "f1", "roc_auc", "precision", "recall"})
+REGRESSION_METRICS = frozenset({"r2", "rmse", "mse", "mae", "mape"})
+
+
+def supported_metrics(task_type: str) -> frozenset[str]:
+    """Return the canonical metric names usable for the given task type."""
+
+    return CLASSIFICATION_METRICS if task_type == "classification" else REGRESSION_METRICS
 
 
 @dataclass
@@ -33,7 +44,7 @@ class EvaluationResult:
 class MetricSpec:
     """Metadata defining how to evaluate and aggregate a metric."""
 
-    scoring: str
+    scoring: Union[str, Callable]
     greater_is_better: bool
 
 
@@ -105,6 +116,17 @@ class Evaluator:
         classification = summary.task_type == "classification"
         n_classes = len(summary.class_balance) if summary.class_balance else 0
 
+        # sklearn's binary f1/precision/recall scorers assume pos_label=1, which
+        # fails for labels like "yes"/"no"; use the last sorted label instead.
+        binary_scorers = {"f1": f1_score, "precision": precision_score, "recall": recall_score}
+        if classification and n_classes == 2 and metric in binary_scorers:
+            labels = sorted(summary.class_balance, key=str)
+            if 1 not in labels:
+                return MetricSpec(
+                    scoring=make_scorer(binary_scorers[metric], pos_label=labels[-1]),
+                    greater_is_better=True,
+                )
+
         if metric == "accuracy" and classification:
             return MetricSpec(scoring="accuracy", greater_is_better=True)
         if metric == "balanced_accuracy" and classification:
@@ -126,6 +148,8 @@ class Evaluator:
             return MetricSpec(scoring="r2", greater_is_better=True)
         if metric in {"rmse", "root_mean_squared_error"} and not classification:
             return MetricSpec(scoring="neg_root_mean_squared_error", greater_is_better=False)
+        if metric == "mse" and not classification:
+            return MetricSpec(scoring="neg_mean_squared_error", greater_is_better=False)
         if metric in {"mae", "mean_absolute_error"} and not classification:
             return MetricSpec(scoring="neg_mean_absolute_error", greater_is_better=False)
         if metric in {"mape", "mean_absolute_percentage_error"} and not classification:

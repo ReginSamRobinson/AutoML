@@ -136,3 +136,5 @@ dmypy.json
 output/
 logs/
 node_modules/
+uploads/
+automl_report.html

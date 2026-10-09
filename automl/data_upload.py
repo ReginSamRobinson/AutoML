@@ -1,18 +1,47 @@
 """Utilities for handling dataset uploads in the AutoML dashboard."""
 
-import os
 from pathlib import Path
 from typing import Optional, Tuple
 import pandas as pd
-from werkzeug.utils import secure_filename
 
 ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls', 'json', 'parquet'}
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+SAMPLE_DATASET_FILENAME = "sample_breast_cancer.csv"
 
 
 def allowed_file(filename: str) -> bool:
     """Check if file extension is allowed."""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def unique_upload_path(folder: Path, filename: str) -> Path:
+    """Return a path in folder that does not overwrite an existing file."""
+    candidate = folder / filename
+    stem, suffix = candidate.stem, candidate.suffix
+    counter = 1
+    while candidate.exists():
+        candidate = folder / f"{stem}_{counter}{suffix}"
+        counter += 1
+    return candidate
+
+
+def ensure_sample_dataset(upload_dir: Path) -> Optional[Path]:
+    """Write the breast-cancer sample dataset to upload_dir if missing.
+
+    Returns the sample path, or None if it could not be created.
+    """
+    sample_path = Path(upload_dir) / SAMPLE_DATASET_FILENAME
+    if sample_path.exists():
+        return sample_path
+
+    try:
+        from sklearn.datasets import load_breast_cancer
+
+        load_breast_cancer(as_frame=True).frame.to_csv(sample_path, index=False)
+    except Exception:
+        sample_path.unlink(missing_ok=True)
+        return None
+    return sample_path
 
 
 def create_upload_folder(base_path: Optional[str] = None) -> str:

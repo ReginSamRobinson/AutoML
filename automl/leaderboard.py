@@ -19,6 +19,16 @@ class LeaderboardEntry:
     combined_score: float
 
 
+FAILED_RUN_SCORE = -1.0  # below any score a completed run can reach
+
+
+def _is_failed(result: EvaluationResult) -> bool:
+    """Return True when the run crashed or produced no primary metric."""
+
+    value = result.metrics.get(result.primary_metric, float("nan"))
+    return any(v.name == "runtime_error" for v in result.violations) or bool(np.isnan(value))
+
+
 class Leaderboard:
     """Maintains and sorts evaluation results."""
 
@@ -35,6 +45,12 @@ class Leaderboard:
 
         self._results.append(result)
 
+    @property
+    def has_results(self) -> bool:
+        """Whether any result has been added."""
+
+        return bool(self._results)
+
     def build(self) -> List[LeaderboardEntry]:
         """Return ranked leaderboard entries."""
 
@@ -42,27 +58,35 @@ class Leaderboard:
             self._entries = []
             return self._entries
 
-        primary_metric = self._results[0].primary_metric
-        primary_pref = self._results[0].metric_preferences.get(primary_metric, True)
-        performances = np.array([res.metrics.get(primary_metric, float("nan")) for res in self._results], dtype=float)
-        times = np.array([res.resource_usage.training_time for res in self._results], dtype=float)
-        memories = np.array([res.resource_usage.peak_ram_mb for res in self._results], dtype=float)
-        cpus = np.array([res.resource_usage.avg_cpu_percent for res in self._results], dtype=float)
-
-        perf_norm = self._normalize(performances, higher_is_better=primary_pref)
-        time_norm = self._normalize(times, higher_is_better=False)
-        memory_norm = self._normalize(memories, higher_is_better=False)
-        cpu_norm = self._normalize(cpus, higher_is_better=False)
+        # Failed runs report zero time/RAM; keeping them out of normalisation stops
+        # them from looking like the most efficient candidates.
+        completed = [res for res in self._results if not _is_failed(res)]
+        failed = [res for res in self._results if _is_failed(res)]
 
         entries: List[LeaderboardEntry] = []
-        for idx, result in enumerate(self._results):
-            resource_cost = 0.5 * time_norm[idx] + 0.3 * memory_norm[idx] + 0.2 * cpu_norm[idx]
-            combined = self.performance_weight * perf_norm[idx] - self.resource_weight * resource_cost
-            if result.violations:
-                combined -= 0.1 * len(result.violations)
-            entries.append(LeaderboardEntry(rank=0, result=result, combined_score=float(combined)))
+        if completed:
+            primary_metric = completed[0].primary_metric
+            primary_pref = completed[0].metric_preferences.get(primary_metric, True)
+            performances = np.array([res.metrics[primary_metric] for res in completed], dtype=float)
+            times = np.array([res.resource_usage.training_time for res in completed], dtype=float)
+            memories = np.array([res.resource_usage.peak_ram_mb for res in completed], dtype=float)
+            cpus = np.array([res.resource_usage.avg_cpu_percent for res in completed], dtype=float)
+
+            perf_norm = self._normalize(performances, higher_is_better=primary_pref)
+            time_norm = self._normalize(times, higher_is_better=False)
+            memory_norm = self._normalize(memories, higher_is_better=False)
+            cpu_norm = self._normalize(cpus, higher_is_better=False)
+
+            for idx, result in enumerate(completed):
+                resource_efficiency = 0.5 * time_norm[idx] + 0.3 * memory_norm[idx] + 0.2 * cpu_norm[idx]
+                resource_cost = 1.0 - resource_efficiency
+                combined = self.performance_weight * perf_norm[idx] - self.resource_weight * resource_cost
+                if result.violations:
+                    combined -= 0.1 * len(result.violations)
+                entries.append(LeaderboardEntry(rank=0, result=result, combined_score=float(combined)))
 
         entries.sort(key=lambda entry: entry.combined_score, reverse=True)
+        entries.extend(LeaderboardEntry(rank=0, result=res, combined_score=FAILED_RUN_SCORE) for res in failed)
         for rank, entry in enumerate(entries, start=1):
             entry.rank = rank
 
@@ -105,7 +129,10 @@ class Leaderboard:
 
     @staticmethod
     def _normalize(values: np.ndarray, higher_is_better: bool) -> np.ndarray:
-        """Normalize array values to [0, 1] range respecting optimization direction."""
+        """Map values to [0, 1] where 1 is the best value in the given direction.
+
+        NaN values are treated as the worst observed value.
+        """
 
         if values.size == 0:
             return values
@@ -116,6 +143,7 @@ class Leaderboard:
         min_val = float(np.nanmin(values))
         max_val = float(np.nanmax(values))
         if np.isclose(max_val, min_val):
-            return np.ones_like(values) if higher_is_better else np.zeros_like(values)
+            return np.ones_like(values)
         filled = np.nan_to_num(values, nan=min_val if higher_is_better else max_val)
-        return (filled - min_val) / (max_val - min_val)
+        scaled = (filled - min_val) / (max_val - min_val)
+        return scaled if higher_is_better else 1.0 - scaled

@@ -42,13 +42,15 @@ class ResultVisualizer:
 
     @staticmethod
     def metrics_summary(result: AutoMLResult) -> dict[str, dict]:
-        """Extract metrics summary for visualization."""
+        """Extract metrics for the best-ranked configuration of each model."""
         if not result.leaderboard:
             return {}
 
         summary = {}
         for entry in result.leaderboard:
             model_name = entry.result.model_name
+            if model_name in summary:
+                continue  # leaderboard is rank-ordered; keep the best config
             summary[model_name] = {}
             for metric_name, metric_value in entry.result.metrics.items():
                 if not metric_name.endswith("_std"):

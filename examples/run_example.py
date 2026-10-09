@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 import pandas as pd
-from sklearn.datasets import load_breast_cancer
 
 from automl import (
     AutoMLEngine,
@@ -20,10 +19,10 @@ from automl import (
     ResourceConstraints,
     ResourceMonitor,
     export_to_html,
+    run_dashboard,
     run_dashboard_qt,
 )
-from automl.dashboard import SAMPLE_DATASET_FILENAME
-from automl.data_upload import create_upload_folder
+from automl.data_upload import create_upload_folder, ensure_sample_dataset
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -31,24 +30,11 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 def prepare_sample_dataset() -> Tuple[Path, pd.DataFrame, pd.Series]:
     """Persist the sample dataset so it appears on the launch page."""
 
-    upload_dir = Path(create_upload_folder())
-    sample_path = upload_dir / SAMPLE_DATASET_FILENAME
+    sample_path = ensure_sample_dataset(Path(create_upload_folder()))
+    if sample_path is None:
+        raise RuntimeError("Could not create the sample dataset")
 
-    dataset = load_breast_cancer(as_frame=True)
-    frame = dataset.frame.copy() if getattr(dataset, "frame", None) is not None else None
-
-    if frame is None:
-        feature_names = getattr(dataset, "feature_names", None)
-        features = pd.DataFrame(dataset.data, columns=feature_names)
-        if features.empty:
-            features = pd.DataFrame(dataset.data)
-        frame = features.assign(target=dataset.target)
-
-    if "target" not in frame.columns:
-        frame = frame.assign(target=dataset.target)
-
-    frame.to_csv(sample_path, index=False)
-
+    frame = pd.read_csv(sample_path)
     features_df = frame.drop(columns=["target"])
     target_series = frame["target"]
     return sample_path, features_df, target_series
@@ -137,9 +123,10 @@ def main() -> None:
         print("AutoML run skipped. Use the dashboard to select and launch the sample dataset when you're ready.")
 
     if run_dashboard_qt is None:
-        raise RuntimeError("PySide6 is required for run_dashboard_qt. Install it with `pip install PySide6`.")
-
-    run_dashboard_qt(result)
+        print("PySide6 not installed; opening the dashboard in your browser instead.")
+        run_dashboard(result)
+    else:
+        run_dashboard_qt(result)
 
 
 if __name__ == "__main__":

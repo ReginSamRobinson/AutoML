@@ -10,7 +10,7 @@ from sklearn.base import BaseEstimator
 from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor, RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import ElasticNet, LogisticRegression
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 
@@ -20,6 +20,26 @@ try:
     HAS_XGB = True
 except ImportError:  # pragma: no cover - optional dependency
     HAS_XGB = False
+
+
+if HAS_XGB:
+
+    class LabelEncodedXGBClassifier(XGBClassifier):
+        """XGBClassifier that accepts arbitrary labels (strings, non-contiguous ints).
+
+        XGBoost requires classes encoded as 0..n-1; this encodes on fit and
+        decodes on predict so it behaves like any sklearn classifier.
+        """
+
+        def fit(self, X, y, **kwargs):
+            self._label_encoder = LabelEncoder().fit(y)
+            super().fit(X, self._label_encoder.transform(y), **kwargs)
+            self.classes_ = self._label_encoder.classes_
+            return self
+
+        def predict(self, X, **kwargs):
+            encoded = np.asarray(super().predict(X, **kwargs)).astype(int)
+            return self._label_encoder.inverse_transform(encoded)
 
 from .config import ResourceConstraints
 from .dataset_analysis import DatasetSummary
@@ -62,7 +82,7 @@ def _build_preprocessor(summary: DatasetSummary, scale_numeric: bool) -> ColumnT
     return ColumnTransformer(transformers=transformers, remainder="drop")
 
 
-def _build_xgb_classifier_pipeline(summary: DatasetSummary) -> Pipeline:
+def _build_xgb_classifier_pipeline(summary: DatasetSummary, random_state: int | None) -> Pipeline:
     """Construct an XGBoost classifier pipeline with dataset-aware configuration."""
 
     params = dict(
@@ -72,9 +92,8 @@ def _build_xgb_classifier_pipeline(summary: DatasetSummary) -> Pipeline:
         max_depth=6,
         subsample=0.8,
         colsample_bytree=0.8,
-        random_state=42,
+        random_state=random_state,
         n_jobs=-1,
-        use_label_encoder=False,
     )
 
     n_classes = len(summary.class_balance) if summary.class_balance else 0
@@ -86,12 +105,12 @@ def _build_xgb_classifier_pipeline(summary: DatasetSummary) -> Pipeline:
     return Pipeline(
         steps=[
             ("preprocess", _build_preprocessor(summary, scale_numeric=False)),
-            ("model", XGBClassifier(**params)),
+            ("model", LabelEncodedXGBClassifier(**params)),
         ]
     )
 
 
-def _build_xgb_regressor_pipeline(summary: DatasetSummary) -> Pipeline:
+def _build_xgb_regressor_pipeline(summary: DatasetSummary, random_state: int | None) -> Pipeline:
     """Construct an XGBoost regressor pipeline."""
 
     model = XGBRegressor(
@@ -102,7 +121,7 @@ def _build_xgb_regressor_pipeline(summary: DatasetSummary) -> Pipeline:
         max_depth=6,
         subsample=0.8,
         colsample_bytree=0.8,
-        random_state=42,
+        random_state=random_state,
         n_jobs=-1,
     )
 
@@ -120,14 +139,15 @@ class ModelDescriptor:
 
     name: str
     interpretable: bool
-    builder: Callable[[DatasetSummary], Pipeline]
+    builder: Callable[[DatasetSummary, Optional[int]], Pipeline]
     base_search_space: Dict[str, List[object]]
 
 
 class ModelRegistry:
     """Keeps track of available model templates and search spaces."""
 
-    def __init__(self) -> None:
+    def __init__(self, random_state: int | None = 42) -> None:
+        self.random_state = random_state
         self._classification_models: Dict[str, ModelDescriptor] = {}
         self._regression_models: Dict[str, ModelDescriptor] = {}
         self._register_models()
@@ -139,7 +159,7 @@ class ModelRegistry:
             "logistic_regression": ModelDescriptor(
                 name="logistic_regression",
                 interpretable=True,
-                builder=lambda summary: Pipeline(
+                builder=lambda summary, seed: Pipeline(
                     steps=[
                         ("preprocess", _build_preprocessor(summary, scale_numeric=True)),
                         (
@@ -150,19 +170,18 @@ class ModelRegistry:
                 ),
                 base_search_space={
                     "model__C": [0.01, 0.1, 1.0, 5.0],
-                    "model__penalty": ["l2"],
                     "model__solver": ["lbfgs", "sag"],
                 },
             ),
             "random_forest": ModelDescriptor(
                 name="random_forest",
                 interpretable=False,
-                builder=lambda summary: Pipeline(
+                builder=lambda summary, seed: Pipeline(
                     steps=[
                         ("preprocess", _build_preprocessor(summary, scale_numeric=False)),
                         (
                             "model",
-                            RandomForestClassifier(random_state=42, n_jobs=-1, class_weight="balanced"),
+                            RandomForestClassifier(random_state=seed, n_jobs=-1, class_weight="balanced"),
                         ),
                     ]
                 ),
@@ -176,12 +195,12 @@ class ModelRegistry:
             "gradient_boosting": ModelDescriptor(
                 name="gradient_boosting",
                 interpretable=False,
-                builder=lambda summary: Pipeline(
+                builder=lambda summary, seed: Pipeline(
                     steps=[
                         ("preprocess", _build_preprocessor(summary, scale_numeric=False)),
                         (
                             "model",
-                            GradientBoostingClassifier(random_state=42),
+                            GradientBoostingClassifier(random_state=seed),
                         ),
                     ]
                 ),
@@ -211,12 +230,12 @@ class ModelRegistry:
             "elastic_net": ModelDescriptor(
                 name="elastic_net",
                 interpretable=True,
-                builder=lambda summary: Pipeline(
+                builder=lambda summary, seed: Pipeline(
                     steps=[
                         ("preprocess", _build_preprocessor(summary, scale_numeric=True)),
                         (
                             "model",
-                            ElasticNet(max_iter=2000, random_state=42),
+                            ElasticNet(max_iter=2000, random_state=seed),
                         ),
                     ]
                 ),
@@ -228,12 +247,12 @@ class ModelRegistry:
             "random_forest": ModelDescriptor(
                 name="random_forest",
                 interpretable=False,
-                builder=lambda summary: Pipeline(
+                builder=lambda summary, seed: Pipeline(
                     steps=[
                         ("preprocess", _build_preprocessor(summary, scale_numeric=False)),
                         (
                             "model",
-                            RandomForestRegressor(random_state=42, n_jobs=-1),
+                            RandomForestRegressor(random_state=seed, n_jobs=-1),
                         ),
                     ]
                 ),
@@ -247,12 +266,12 @@ class ModelRegistry:
             "gradient_boosting": ModelDescriptor(
                 name="gradient_boosting",
                 interpretable=False,
-                builder=lambda summary: Pipeline(
+                builder=lambda summary, seed: Pipeline(
                     steps=[
                         ("preprocess", _build_preprocessor(summary, scale_numeric=False)),
                         (
                             "model",
-                            GradientBoostingRegressor(random_state=42),
+                            GradientBoostingRegressor(random_state=seed),
                         ),
                     ]
                 ),
@@ -296,7 +315,7 @@ class ModelRegistry:
         """Instantiate a model pipeline by name."""
 
         descriptor = self._get_descriptor(model_name, summary.task_type)
-        return descriptor.builder(summary)
+        return descriptor.builder(summary, self.random_state)
 
     def is_interpretable(self, model_name: str, task_type: str) -> bool:
         """Return whether the model is considered interpretable for the task."""

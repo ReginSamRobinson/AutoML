@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
+import warnings
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from time import perf_counter
 from typing import Callable, List, Optional
 
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
-from sklearn.model_selection import ParameterSampler
+from sklearn.model_selection import ParameterGrid, ParameterSampler
 
 from .config import ResourceConstraints
 from .constraint import ConstraintValidator, ConstraintViolation
 from .dataset_analysis import DatasetAnalyzer, DatasetSummary
-from .evaluation import Evaluator, EvaluationResult
+from .evaluation import Evaluator, EvaluationResult, supported_metrics
 from .leaderboard import Leaderboard, LeaderboardEntry
 from .model_registry import ModelRegistry
 from .resource_monitor import ResourceMonitor, ResourceUsage
@@ -59,11 +61,20 @@ class AutoMLEngine:
         """Execute an AutoML search with the provided constraints."""
 
         features_df = features if isinstance(features, pd.DataFrame) else pd.DataFrame(features)
-        target_series = target if isinstance(target, pd.Series) else pd.Series(target)
+        target_series = target if isinstance(target, pd.Series) else pd.Series(target, index=features_df.index)
+
+        # Rows without a label cannot be used for supervised training.
+        labelled = target_series.notna().to_numpy()
+        if not labelled.all():
+            features_df = features_df.loc[labelled]
+            target_series = target_series.loc[labelled]
+        if target_series.empty:
+            raise ValueError("Target column has no non-missing values")
 
         summary = self.analyzer.summarize(features_df, target_series)
         normalized_metrics = self._prepare_metrics(metrics, summary, constraints)
         primary_metric = normalized_metrics[0]
+        constraints = self._align_performance_threshold(constraints, metrics, primary_metric)
 
         validator = self.validator_factory(constraints)
         leaderboard = Leaderboard()
@@ -77,12 +88,15 @@ class AutoMLEngine:
                 model_names = interpretable
 
         rng = np.random.default_rng(self.random_state)
+        search_started = perf_counter()
 
         for model_name in model_names:
             search_space = self.registry.get_search_space(model_name, constraints, summary)
             candidate_params = self._sample_parameters(search_space, rng, constraints, model_name)
 
             for params in candidate_params:
+                if self._budget_exhausted(constraints, search_started, leaderboard):
+                    break
                 estimator = self.registry.build_estimator(model_name, summary)
                 if params:
                     estimator.set_params(**params)
@@ -150,12 +164,64 @@ class AutoMLEngine:
             default = "accuracy" if summary.task_type == "classification" else "rmse"
             candidate_metrics = [default]
 
-        normalized = []
+        allowed = supported_metrics(summary.task_type)
+        normalized: List[str] = []
+        dropped: List[str] = []
         for metric in candidate_metrics:
             canonical = normalize_metric_name(metric)
-            if canonical not in normalized:
+            if canonical not in allowed:
+                if metric not in dropped:
+                    dropped.append(metric)
+            elif canonical not in normalized:
                 normalized.append(canonical)
+
+        if dropped:
+            warnings.warn(
+                f"Ignoring metrics not supported for {summary.task_type}: {', '.join(dropped)}",
+                stacklevel=3,
+            )
+        if not normalized:
+            normalized = ["accuracy" if summary.task_type == "classification" else "rmse"]
         return normalized
+
+    @staticmethod
+    def _align_performance_threshold(
+        constraints: ResourceConstraints,
+        requested_metrics: List[str],
+        primary_metric: str,
+    ) -> ResourceConstraints:
+        """Drop min_performance when it was set for a metric that is no longer primary.
+
+        A threshold like 0.85 written for accuracy is meaningless once the task
+        turns out to be regression and RMSE becomes the primary metric.
+        """
+
+        if constraints.min_performance is None:
+            return constraints
+        requested = list(constraints.preferred_metrics or []) + list(requested_metrics)
+        if requested and normalize_metric_name(requested[0]) != primary_metric:
+            warnings.warn(
+                f"min_performance={constraints.min_performance} was set for '{requested[0]}', "
+                f"which is unavailable; ignoring it for primary metric '{primary_metric}'",
+                stacklevel=3,
+            )
+            return replace(constraints, min_performance=None)
+        return constraints
+
+    @staticmethod
+    def _budget_exhausted(
+        constraints: ResourceConstraints,
+        search_started: float,
+        leaderboard: Leaderboard,
+    ) -> bool:
+        """Return True once the overall search time budget is spent.
+
+        At least one candidate is always evaluated so a result can be produced.
+        """
+
+        if constraints.max_total_time is None or not leaderboard.has_results:
+            return False
+        return perf_counter() - search_started >= constraints.max_total_time
 
     def _sample_parameters(
         self,
@@ -173,7 +239,7 @@ class AutoMLEngine:
         if not filtered_space:
             return [{}]
 
-        budget = self._determine_budget(constraints, model_name)
+        budget = min(self._determine_budget(constraints, model_name), len(ParameterGrid(filtered_space)))
         sampler = ParameterSampler(filtered_space, n_iter=budget, random_state=int(rng.integers(0, 1_000_000)))
         unique_configs: List[dict[str, object]] = []
         for config in sampler:

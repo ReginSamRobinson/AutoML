@@ -18,7 +18,7 @@ class ResourceUsage:
     """Metrics captured for a model training run."""
 
     training_time: float
-    peak_ram_mb: float
+    peak_ram_mb: float  # peak memory above the process baseline
     avg_cpu_percent: float
 
 
@@ -35,7 +35,8 @@ class ResourceMonitor:
 
         process = psutil.Process()
         stop_event = Event()
-        peak_ram_mb: float = 0.0
+        baseline_ram_mb = process.memory_info().rss / (1024 ** 2)
+        peak_ram_mb: float = baseline_ram_mb
         cpu_samples: list[float] = []
 
         def sampler() -> None:
@@ -64,5 +65,9 @@ class ResourceMonitor:
 
         elapsed = end_time - start_time
         avg_cpu = float(sum(cpu_samples) / len(cpu_samples)) if cpu_samples else 0.0
-        usage = ResourceUsage(training_time=elapsed, peak_ram_mb=peak_ram_mb, avg_cpu_percent=avg_cpu)
+        usage = ResourceUsage(
+            training_time=elapsed,
+            peak_ram_mb=max(0.0, peak_ram_mb - baseline_ram_mb),
+            avg_cpu_percent=avg_cpu,
+        )
         return usage, result
