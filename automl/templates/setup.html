@@ -69,14 +69,26 @@
                                 <option value="">Select a dataset first</option>
                             </select>
                         </div>
-                        <p class="hint">Classification or regression is detected from this column.</p>
+                        <p class="hint">Columns with IDs or free text are left out automatically.</p>
                     </div>
                     <div class="field">
-                        <label for="preferredMetrics">Primary metric</label>
-                        <input id="preferredMetrics" class="input mono" value="{{ (c.preferred_metrics or []) | join(', ') }}"
-                               placeholder="accuracy" spellcheck="false">
-                        <p class="hint">Ranks the models and is checked against the threshold.</p>
+                        <label for="taskSelect">Task</label>
+                        <div class="select-wrap">
+                            <select id="taskSelect" class="select">
+                                <option value="auto">Detect from target</option>
+                                <option value="classification">Classification</option>
+                                <option value="regression">Regression</option>
+                            </select>
+                        </div>
+                        <p class="hint">Override if numeric labels are detected as values, or the reverse.</p>
                     </div>
+                </div>
+
+                <div class="field">
+                    <label for="preferredMetrics">Primary metric</label>
+                    <input id="preferredMetrics" class="input mono" value="{{ (c.preferred_metrics or []) | join(', ') }}"
+                           placeholder="accuracy" spellcheck="false">
+                    <p class="hint">Ranks the models and is checked against the threshold. If it doesn't fit the task, a default is used.</p>
                 </div>
 
                 <div class="field">
@@ -196,6 +208,7 @@
             <dl class="spec">
                 <div><dt>dataset</dt><dd data-m="dataset">—</dd></div>
                 <div><dt>target</dt><dd data-m="target">—</dd></div>
+                <div><dt>task</dt><dd data-m="task">—</dd></div>
                 <div><dt>rank by</dt><dd data-m="primary">—</dd></div>
                 <div><dt>metrics</dt><dd data-m="metrics">—</dd></div>
                 <div class="spec-rule" aria-hidden="true"></div>

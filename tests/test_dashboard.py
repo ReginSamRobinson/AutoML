@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 
 import pytest
 
@@ -68,6 +69,48 @@ def test_run_on_regression_upload_with_default_settings(client) -> None:
     body = response.get_json()
     assert response.status_code == 200, body
     assert body["best_result"]["primary_metric"] == "rmse"
+
+
+def test_dataset_with_missing_values_returns_strict_json(client) -> None:
+    csv = b"a,b,target\n" + b"".join(f"{'' if i % 3 else i},{i},{i % 2}\n".encode() for i in range(20))
+    client.post("/api/upload", data={"file": (io.BytesIO(csv), "gaps.csv")})
+
+    body = client.get("/api/datasets/gaps.csv").get_data(as_text=True)
+
+    assert "NaN" not in body
+    assert json.loads(body)["preview"]["columns"] == ["a", "b", "target"]
+
+
+def test_run_rejects_single_class_target_with_400(client) -> None:
+    csv = b"a,b,target\n" + b"".join(f"{i},{i * 2},same\n".encode() for i in range(20))
+    client.post("/api/upload", data={"file": (io.BytesIO(csv), "flat.csv")})
+
+    response = client.post("/api/run", json={"dataset": "flat.csv", "target": "target"})
+
+    assert response.status_code == 400
+    assert "only one distinct value" in response.get_json()["error"]
+
+
+def test_run_honours_task_override_and_reports_notes(client) -> None:
+    rows = "".join(f"{i},{(i * 7) % 13},{i % 2}\n" for i in range(60))
+    client.post("/api/upload", data={"file": (io.BytesIO(("id,x,label\n" + rows).encode()), "flags.csv")})
+
+    response = client.post(
+        "/api/run",
+        json={
+            "dataset": "flags.csv",
+            "target": "label",
+            "task_type": "regression",
+            "constraints": {"max_training_time": 10, "interpretability_required": True},
+        },
+    )
+
+    body = response.get_json()
+    assert response.status_code == 200, body
+    assert body["best_result"]["primary_metric"] == "rmse"
+    assert any("id (row identifier)" in note for note in body["notes"])
+    page = client.get("/?view=dashboard").get_data(as_text=True)
+    assert "Adjustments made for this dataset" in page
 
 
 def test_settings_file_is_not_a_dataset(client) -> None:

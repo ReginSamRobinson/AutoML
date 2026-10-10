@@ -20,7 +20,7 @@ from werkzeug.utils import secure_filename
 
 from .config import ResourceConstraints
 from .constraint import ConstraintValidator
-from .dataset_analysis import DatasetAnalyzer
+from .dataset_analysis import TASK_TYPES, DatasetAnalyzer
 from .evaluation import Evaluator
 from .exporter import export_to_html
 from .engine import AutoMLEngine, AutoMLResult
@@ -667,6 +667,12 @@ def create_app(result: Optional[AutoMLResult] = None, upload_dir: Optional[str |
         if not dataset_name or not target_column:
             return jsonify({"error": "Dataset name and target column are required"}), 400
 
+        task_type = payload.get("task_type") or None
+        if task_type == "auto":
+            task_type = None
+        if task_type not in (None, *TASK_TYPES):
+            return jsonify({"error": f"Unknown task type '{task_type}'"}), 400
+
         filename = secure_filename(str(dataset_name))
         dataset_path = Path(app.config["UPLOAD_FOLDER"]) / filename
         if not dataset_path.exists():
@@ -735,7 +741,10 @@ def create_app(result: Optional[AutoMLResult] = None, upload_dir: Optional[str |
                 target_series,
                 constraints=constraints,
                 metrics=[metric for metric in metrics if isinstance(metric, str) and metric],
+                task_type=task_type,
             )
+        except ValueError as exc:  # the dataset or target cannot be used as given
+            return jsonify({"error": str(exc)}), 400
         except Exception as exc:
             return jsonify({"error": f"AutoML run failed: {exc}"}), 500
 
@@ -764,6 +773,8 @@ def create_app(result: Optional[AutoMLResult] = None, upload_dir: Optional[str |
             "message": "AutoML run complete",
             "leaderboard_size": len(result_obj.leaderboard),
             "best_result": best_summary,
+            "constraints_met": result_obj.constraints_met,
+            "notes": result_obj.notes,
             "redirect": "/?view=dashboard",
         }
         return jsonify(response), 200
@@ -974,6 +985,8 @@ def _results_view(result: AutoMLResult) -> dict[str, object]:
         "n_models": 0,
         "n_passing": 0,
         "n_failed": 0,
+        "constraints_met": result.constraints_met,
+        "notes": list(result.notes),
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
     if not entries:

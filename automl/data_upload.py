@@ -1,5 +1,7 @@
 """Utilities for handling dataset uploads in the AutoML dashboard."""
 
+import csv
+import math
 from pathlib import Path
 from typing import Optional, Tuple
 import pandas as pd
@@ -56,16 +58,51 @@ def create_upload_folder(base_path: Optional[str] = None) -> str:
 
 
 def _coerce_json_value(value):
+    """Convert numpy/pandas scalars to plain Python, and missing values to None.
+
+    NaN and infinity are not valid JSON, so browsers fail to parse a payload
+    that contains them.
+    """
     if isinstance(value, dict):
         return {str(key): _coerce_json_value(val) for key, val in value.items()}
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return [_coerce_json_value(item) for item in value]
+    if value is pd.NaT or value is pd.NA:
+        return None
     if hasattr(value, "item") and callable(getattr(value, "item")):
         try:
-            return getattr(value, "item")()
+            value = getattr(value, "item")()
         except Exception:
             return value
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
     return value
+
+
+# Tried in order; latin-1 decodes any byte sequence, so it always succeeds.
+CSV_ENCODINGS = ("utf-8-sig", "cp1252", "latin-1")
+CSV_DELIMITERS = ",;\t|"
+
+
+def _sniff_delimiter(file_path: str) -> str:
+    """Guess the delimiter from the start of the file, defaulting to a comma."""
+    with open(file_path, "rb") as handle:
+        sample = handle.read(64 * 1024).decode("utf-8", errors="replace")
+    try:
+        return csv.Sniffer().sniff(sample, delimiters=CSV_DELIMITERS).delimiter
+    except csv.Error:
+        return ","
+
+
+def _read_csv(file_path: str) -> pd.DataFrame:
+    """Read a CSV whose delimiter and text encoding are not known in advance."""
+    delimiter = _sniff_delimiter(file_path)
+    for encoding in CSV_ENCODINGS:
+        try:
+            return pd.read_csv(file_path, sep=delimiter, encoding=encoding)
+        except UnicodeDecodeError:
+            continue
+    raise ValueError("Could not decode the file as UTF-8 or Latin-1 text")
 
 
 def load_dataset(file_path: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
@@ -79,7 +116,7 @@ def load_dataset(file_path: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]
         file_ext = file_path.rsplit('.', 1)[1].lower()
         
         if file_ext == 'csv':
-            df = pd.read_csv(file_path)
+            df = _read_csv(file_path)
         elif file_ext in ['xlsx', 'xls']:
             df = pd.read_excel(file_path)
         elif file_ext == 'json':

@@ -68,6 +68,23 @@
 
 <div class="stack">
     {% set s = view.selected %}
+    {% if s and not view.constraints_met %}
+    <div class="notice is-error reveal" style="--i:2" role="alert">
+        <p class="notice-title">No candidate met every limit</p>
+        <p>Showing the closest one, {{ s.label }} ({{ s.violations | map(attribute='details') | join('; ') }}).
+            Loosen the constraints on the <a href="/">setup page</a> to get a model that meets them.</p>
+    </div>
+    {% endif %}
+
+    {% if view.notes %}
+    <div class="notice is-warn reveal" style="--i:2" role="status">
+        <p class="notice-title">Adjustments made for this dataset</p>
+        <ul class="notice-list">
+            {% for note in view.notes %}<li>{{ note }}</li>{% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
     {% if s %}
     <section class="hero reveal" style="--i:2" aria-labelledby="selectedHeading">
         <div class="hero-main">

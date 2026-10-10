@@ -6,11 +6,12 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, List, Optional
 
 import numpy as np
+import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor, RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import ElasticNet, LogisticRegression
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder, StandardScaler
+from sklearn.preprocessing import FunctionTransformer, LabelEncoder, OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 
@@ -42,37 +43,64 @@ if HAS_XGB:
             return self._label_encoder.inverse_transform(encoded)
 
 from .config import ResourceConstraints
-from .dataset_analysis import DatasetSummary
+from .dataset_analysis import DatasetSummary, parse_datetimes
+
+# Rarer categories are merged into one "infrequent" column so a column with
+# many levels cannot blow up the feature matrix.
+MAX_ONE_HOT_CATEGORIES = 30
+MISSING_CATEGORY = "(missing)"
 
 
 def _create_one_hot_encoder() -> OneHotEncoder:
-    """Instantiate an OneHotEncoder compatible with multiple sklearn versions."""
+    """One-hot encoder that caps the columns per feature and ignores unseen levels."""
 
-    try:
-        return OneHotEncoder(handle_unknown="ignore", sparse_output=False)
-    except TypeError:  # pragma: no cover - fallback for older versions
-        return OneHotEncoder(handle_unknown="ignore", sparse=False)
+    return OneHotEncoder(
+        handle_unknown="infrequent_if_exist",
+        max_categories=MAX_ONE_HOT_CATEGORIES,
+        sparse_output=False,
+    )
+
+
+def _as_category_strings(frame) -> np.ndarray:
+    """Cast categories to text so mixed number/text columns encode, keeping missing as its own level."""
+
+    frame = pd.DataFrame(frame)
+    return frame.astype(str).where(frame.notna(), MISSING_CATEGORY).to_numpy(dtype=object)
+
+
+def _datetime_parts(frame) -> np.ndarray:
+    """Expand each date/time column into year, month, day, weekday and hour."""
+
+    frame = pd.DataFrame(frame)
+    parts = []
+    for column in frame.columns:
+        stamps = parse_datetimes(frame[column]).dt
+        parts.extend([stamps.year, stamps.month, stamps.day, stamps.dayofweek, stamps.hour])
+    return np.column_stack([np.asarray(part, dtype=float) for part in parts])
 
 
 def _build_preprocessor(summary: DatasetSummary, scale_numeric: bool) -> ColumnTransformer:
     """Create a preprocessing column transformer based on dataset metadata."""
 
-    numeric_pipeline_steps = [("impute", SimpleImputer(strategy="median"))]
-    if scale_numeric:
-        numeric_pipeline_steps.append(("scale", StandardScaler()))
-
-    numeric_pipeline = Pipeline(steps=numeric_pipeline_steps) if summary.numeric_columns else "drop"
-    categorical_pipeline = Pipeline(
-        steps=[
-            ("impute", SimpleImputer(strategy="most_frequent")),
-            ("encode", _create_one_hot_encoder()),
-        ]
-    ) if summary.categorical_columns else "drop"
+    def numeric_steps() -> list:
+        steps = [("impute", SimpleImputer(strategy="median"))]
+        if scale_numeric:
+            steps.append(("scale", StandardScaler()))
+        return steps
 
     transformers: List[tuple[str, object, Iterable[str]]] = []
     if summary.numeric_columns:
-        transformers.append(("numeric", numeric_pipeline, summary.numeric_columns))
+        transformers.append(("numeric", Pipeline(steps=numeric_steps()), summary.numeric_columns))
+    if summary.datetime_columns:
+        datetime_pipeline = Pipeline(steps=[("expand", FunctionTransformer(_datetime_parts)), *numeric_steps()])
+        transformers.append(("datetime", datetime_pipeline, summary.datetime_columns))
     if summary.categorical_columns:
+        categorical_pipeline = Pipeline(
+            steps=[
+                ("as_text", FunctionTransformer(_as_category_strings)),
+                ("encode", _create_one_hot_encoder()),
+            ]
+        )
         transformers.append(("categorical", categorical_pipeline, summary.categorical_columns))
 
     if not transformers:

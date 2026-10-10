@@ -1417,6 +1417,19 @@ label,
     background: var(--success-soft);
 }
 
+.notice.is-warn {
+    border-left-color: var(--warn);
+}
+
+.notice-list {
+    margin: 0;
+    padding-left: 18px;
+}
+
+.notice-list li + li {
+    margin-top: 4px;
+}
+
 .notice-title {
     font-family: var(--display);
     font-size: 16px;

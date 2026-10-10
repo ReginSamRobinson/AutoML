@@ -102,12 +102,25 @@ class Evaluator:
 
         return aggregated, preferences
 
+    def effective_folds(self, summary: DatasetSummary, target: pd.Series) -> int:
+        """Return cv_folds, reduced so every fold can hold each class (or any row at all).
+
+        Callers must ensure the smallest class has at least two rows.
+        """
+
+        if summary.task_type == "classification":
+            limit = int(target.value_counts().min())
+        else:
+            limit = int(target.shape[0])
+        return max(2, min(self.cv_folds, limit))
+
     def _build_cv(self, summary: DatasetSummary, target: pd.Series):
         """Create the appropriate cross-validation splitter."""
 
+        n_splits = self.effective_folds(summary, target)
         if summary.task_type == "classification":
-            return StratifiedKFold(n_splits=self.cv_folds, shuffle=True, random_state=self.random_state)
-        return KFold(n_splits=self.cv_folds, shuffle=True, random_state=self.random_state)
+            return StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=self.random_state)
+        return KFold(n_splits=n_splits, shuffle=True, random_state=self.random_state)
 
     def _resolve_metric(self, metric: str, summary: DatasetSummary) -> MetricSpec:
         """Map metric identifiers to sklearn scoring strings."""

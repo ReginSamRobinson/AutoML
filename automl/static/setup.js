@@ -9,6 +9,7 @@
         datasetSummary: document.getElementById("datasetSummary"),
         stats: document.getElementById("datasetStats"),
         target: document.getElementById("targetSelect"),
+        task: document.getElementById("taskSelect"),
         metrics: document.getElementById("metricsInput"),
         maxTime: document.getElementById("maxTime"),
         maxRam: document.getElementById("maxRam"),
@@ -115,6 +116,7 @@
         const primary = parseList(els.preferred.value)[0] || metrics[0] || "";
         setSpec("dataset", els.dataset.disabled ? "" : els.dataset.value);
         setSpec("target", els.target.disabled ? "" : els.target.value);
+        setSpec("task", els.task.value === "auto" ? "detect" : els.task.value);
         setSpec("primary", primary);
         setSpec("metrics", metrics.length ? metrics.length + " · " + metrics.join(", ") : "");
         setSpec("time", capText(els.maxTime, "s"));
@@ -333,6 +335,7 @@
         const payload = {
             dataset: els.dataset.value,
             target: els.target.value,
+            task_type: els.task.value,
             metrics: parseList(els.metrics.value),
             cv_folds: numberOrNull(els.cvFolds),
             constraints: {

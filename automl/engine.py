@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from time import perf_counter
 from typing import Callable, List, Optional
 
@@ -23,13 +23,35 @@ from .resource_monitor import ResourceMonitor, ResourceUsage
 from .utils import normalize_metric_name
 
 
+# Used when none of the requested metrics fit the task; the first one ranks models.
+DEFAULT_METRICS = {
+    "classification": ("accuracy", "f1", "roc_auc"),
+    "regression": ("rmse", "r2", "mae"),
+}
+
+
 @dataclass
 class AutoMLResult:
-    """Summary of an AutoML run."""
+    """Summary of an AutoML run.
+
+    When no candidate meets every constraint, best_result is the highest-ranked
+    candidate that still trained, and constraints_met is False.
+    """
 
     best_result: Optional[EvaluationResult]
     best_estimator: Optional[BaseEstimator]
     leaderboard: List[LeaderboardEntry]
+    constraints_met: bool = True
+    dataset_summary: Optional[DatasetSummary] = None
+    # Adjustments the engine made to the request, worded for the user.
+    notes: List[str] = field(default_factory=list)
+
+
+def _note(notes: List[str], message: str) -> None:
+    """Record a message for the result and emit it as a warning."""
+
+    notes.append(message)
+    warnings.warn(message, stacklevel=3)
 
 
 class AutoMLEngine:
@@ -57,8 +79,13 @@ class AutoMLEngine:
         target: pd.Series,
         constraints: ResourceConstraints,
         metrics: List[str],
+        task_type: Optional[str] = None,
     ) -> AutoMLResult:
-        """Execute an AutoML search with the provided constraints."""
+        """Execute an AutoML search with the provided constraints.
+
+        task_type forces "classification" or "regression"; by default it is
+        inferred from the target column.
+        """
 
         features_df = features if isinstance(features, pd.DataFrame) else pd.DataFrame(features)
         target_series = target if isinstance(target, pd.Series) else pd.Series(target, index=features_df.index)
@@ -71,10 +98,16 @@ class AutoMLEngine:
         if target_series.empty:
             raise ValueError("Target column has no non-missing values")
 
-        summary = self.analyzer.summarize(features_df, target_series)
-        normalized_metrics = self._prepare_metrics(metrics, summary, constraints)
+        notes: List[str] = []
+        summary = self.analyzer.summarize(features_df, target_series, task_type=task_type)
+        if summary.task_type == "classification":
+            features_df, target_series = self._drop_singleton_classes(features_df, target_series, notes)
+            summary = self.analyzer.summarize(features_df, target_series, task_type="classification")
+        self._validate_dataset(summary, target_series, notes)
+
+        normalized_metrics = self._prepare_metrics(metrics, summary, constraints, notes)
         primary_metric = normalized_metrics[0]
-        constraints = self._align_performance_threshold(constraints, metrics, primary_metric)
+        constraints = self._align_performance_threshold(constraints, metrics, primary_metric, notes)
 
         validator = self.validator_factory(constraints)
         leaderboard = Leaderboard()
@@ -133,6 +166,18 @@ class AutoMLEngine:
 
         leaderboard_entries = leaderboard.build()
         best_result = leaderboard.best()
+        constraints_met = best_result is not None
+        if best_result is None:
+            best_result = next(
+                (
+                    entry.result
+                    for entry in leaderboard_entries
+                    if not any(v.name == "runtime_error" for v in entry.result.violations)
+                ),
+                None,
+            )
+            if best_result is not None:  # constraints_met=False already tells callers; no note needed
+                warnings.warn("No candidate met every limit, so the closest one was kept.", stacklevel=2)
         best_estimator: Optional[BaseEstimator] = None
 
         if best_result is not None:
@@ -145,13 +190,62 @@ class AutoMLEngine:
             best_result=best_result,
             best_estimator=best_estimator,
             leaderboard=leaderboard_entries,
+            constraints_met=constraints_met,
+            dataset_summary=summary,
+            notes=notes,
         )
+
+    @staticmethod
+    def _drop_singleton_classes(
+        features: pd.DataFrame, target: pd.Series, notes: List[str]
+    ) -> tuple[pd.DataFrame, pd.Series]:
+        """Remove classes with a single row, which cross-validation cannot split."""
+
+        counts = target.value_counts()
+        singletons = list(counts[counts < 2].index)
+        if not singletons:
+            return features, target
+        keep = (~target.isin(singletons)).to_numpy()
+        shown = ", ".join(repr(label) for label in singletons[:5])
+        more = f" and {len(singletons) - 5} more" if len(singletons) > 5 else ""
+        _note(
+            notes,
+            f"Dropped {len(singletons)} class(es) with only one row ({shown}{more}); "
+            "cross-validation needs at least two rows per class.",
+        )
+        return features.loc[keep], target.loc[keep]
+
+    def _validate_dataset(self, summary: DatasetSummary, target: pd.Series, notes: List[str]) -> None:
+        """Reject targets and feature sets no model can learn from, and note adjustments."""
+
+        if target.nunique() < 2:
+            raise ValueError(
+                f"Target column '{summary.target_name}' has only one distinct value, so there is nothing to predict"
+            )
+        usable = summary.numeric_columns + summary.categorical_columns + summary.datetime_columns
+        if not usable:
+            reasons = "; ".join(f"{name}: {why}" for name, why in summary.dropped_columns.items())
+            raise ValueError(f"No usable feature columns ({reasons})")
+        if summary.dropped_columns:
+            listed = ", ".join(f"{name} ({why})" for name, why in summary.dropped_columns.items())
+            _note(notes, f"Ignored columns: {listed}.")
+        if summary.datetime_columns:
+            listed = ", ".join(map(str, summary.datetime_columns))
+            _note(notes, f"Split date/time columns into year, month, day, weekday and hour: {listed}.")
+        folds = self.evaluator.effective_folds(summary, target)
+        if folds < self.evaluator.cv_folds:
+            _note(
+                notes,
+                f"Used {folds}-fold cross-validation instead of {self.evaluator.cv_folds}; "
+                "the smallest class or the dataset is too small to split further.",
+            )
 
     def _prepare_metrics(
         self,
         metrics: List[str],
         summary: DatasetSummary,
         constraints: ResourceConstraints,
+        notes: List[str],
     ) -> List[str]:
         """Normalize metric names and ensure suitability for the task."""
 
@@ -161,8 +255,7 @@ class AutoMLEngine:
         candidate_metrics.extend(metrics)
 
         if not candidate_metrics:
-            default = "accuracy" if summary.task_type == "classification" else "rmse"
-            candidate_metrics = [default]
+            candidate_metrics = list(DEFAULT_METRICS[summary.task_type])
 
         allowed = supported_metrics(summary.task_type)
         normalized: List[str] = []
@@ -176,12 +269,10 @@ class AutoMLEngine:
                 normalized.append(canonical)
 
         if dropped:
-            warnings.warn(
-                f"Ignoring metrics not supported for {summary.task_type}: {', '.join(dropped)}",
-                stacklevel=3,
-            )
+            _note(notes, f"Skipped metrics that do not apply to {summary.task_type}: {', '.join(dropped)}.")
         if not normalized:
-            normalized = ["accuracy" if summary.task_type == "classification" else "rmse"]
+            normalized = list(DEFAULT_METRICS[summary.task_type])
+            _note(notes, f"Used the default {summary.task_type} metrics instead: {', '.join(normalized)}.")
         return normalized
 
     @staticmethod
@@ -189,6 +280,7 @@ class AutoMLEngine:
         constraints: ResourceConstraints,
         requested_metrics: List[str],
         primary_metric: str,
+        notes: List[str],
     ) -> ResourceConstraints:
         """Drop min_performance when it was set for a metric that is no longer primary.
 
@@ -200,10 +292,10 @@ class AutoMLEngine:
             return constraints
         requested = list(constraints.preferred_metrics or []) + list(requested_metrics)
         if requested and normalize_metric_name(requested[0]) != primary_metric:
-            warnings.warn(
-                f"min_performance={constraints.min_performance} was set for '{requested[0]}', "
-                f"which is unavailable; ignoring it for primary metric '{primary_metric}'",
-                stacklevel=3,
+            _note(
+                notes,
+                f"The performance threshold {constraints.min_performance:g} was set for '{requested[0]}', "
+                f"which does not apply here, so it was not used for '{primary_metric}'.",
             )
             return replace(constraints, min_performance=None)
         return constraints
