@@ -217,26 +217,6 @@ a:hover {
     text-decoration: none;
 }
 
-.brand-mark {
-    width: 32px;
-    height: 32px;
-    flex: none;
-}
-
-.bm-frame {
-    fill: var(--text);
-}
-
-.bm-bar {
-    fill: var(--bg);
-    opacity: 0.55;
-}
-
-.bm-hot {
-    fill: var(--accent);
-    opacity: 1;
-}
-
 .brand-text {
     display: flex;
     flex-direction: column;
@@ -246,7 +226,7 @@ a:hover {
 .brand-name {
     font-family: var(--display);
     font-weight: 700;
-    font-size: 18px;
+    font-size: 21px;
     letter-spacing: -0.02em;
 }
 
@@ -383,7 +363,7 @@ a:hover {
 .main {
     min-width: 0;
     padding: 36px 44px 64px;
-    max-width: 1360px;
+    max-width: 1680px;
     width: 100%;
 }
 
@@ -2190,9 +2170,6 @@ th[aria-sort="descending"] .sort-btn::after {
         padding: 10px 16px;
     }
 
-    .brand-text {
-        display: none;
-    }
 
     .nav-idx {
         display: none;

@@ -21,11 +21,27 @@ def client(tmp_path, iris_result: AutoMLResult):
     return app.test_client()
 
 
-def test_start_page_and_dashboard_render(client) -> None:
-    assert client.get("/").status_code == 200
-    response = client.get("/?view=dashboard")
+def test_landing_setup_and_results_render(client) -> None:
+    landing = client.get("/").get_data(as_text=True)
+    assert 'href="/setup"' in landing
+    assert 'href="/results"' in landing  # a result exists, so it is offered
+
+    assert client.get("/setup").status_code == 200
+    response = client.get("/results")
     assert response.status_code == 200
     assert b"/vendor/plotly.min.js" in response.data
+
+
+def test_old_dashboard_link_redirects_to_results(client) -> None:
+    response = client.get("/?view=dashboard")
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/results")
+
+
+def test_results_without_a_run_redirects_to_setup(tmp_path) -> None:
+    fresh = create_app(upload_dir=tmp_path / "uploads").test_client()
+    assert fresh.get("/results").headers["Location"].endswith("/setup")
+    assert 'href="/results"' not in fresh.get("/").get_data(as_text=True)
 
 
 def test_plotly_bundle_is_served(client) -> None:
@@ -109,7 +125,7 @@ def test_run_honours_task_override_and_reports_notes(client) -> None:
     assert response.status_code == 200, body
     assert body["best_result"]["primary_metric"] == "rmse"
     assert any("id (row identifier)" in note for note in body["notes"])
-    page = client.get("/?view=dashboard").get_data(as_text=True)
+    page = client.get("/results").get_data(as_text=True)
     assert "Adjustments made for this dataset" in page
 
 
@@ -121,7 +137,7 @@ def test_settings_file_is_not_a_dataset(client) -> None:
 
 
 def test_results_page_shows_selected_model_and_leaderboard(client, iris_result: AutoMLResult) -> None:
-    page = client.get("/?view=dashboard").get_data(as_text=True)
+    page = client.get("/results").get_data(as_text=True)
     assert 'id="leaderboard"' in page
     assert iris_result.best_result is not None
     assert "Selected model" in page

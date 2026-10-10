@@ -359,7 +359,7 @@
             });
             clearInterval(timer);
             setRunning(true, "Done. Opening results…");
-            window.location.assign(result.redirect || "/?view=dashboard");
+            window.location.assign(result.redirect || "/results");
         } catch (error) {
             clearInterval(timer);
             setRunning(false, error.message, true);

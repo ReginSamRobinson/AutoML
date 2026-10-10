@@ -12,7 +12,7 @@ from typing import Optional
 
 import pandas as pd
 import plotly.graph_objects as go
-from flask import Flask, Response, jsonify, render_template, request
+from flask import Flask, Response, jsonify, redirect, render_template, request, url_for
 from plotly.offline import get_plotlyjs
 from plotly.subplots import make_subplots
 from werkzeug.serving import make_server
@@ -249,20 +249,32 @@ def create_app(result: Optional[AutoMLResult] = None, upload_dir: Optional[str |
 
     @app.route("/")
     def index():
-        """Render the main dashboard or the onboarding start page."""
-        current = get_result()
-        view = (request.args.get("view") or "").strip().lower()
-        has_result = current is not None
-        if view == "dashboard" and current is not None:
-            return render_template(
-                "results.html", active="results", has_result=True, view=_results_view(current)
-            )
+        """Render the landing page."""
+        # Old links pointed the results page at /?view=dashboard.
+        if (request.args.get("view") or "").strip().lower() == "dashboard":
+            return redirect(url_for("results"))
+        return render_template(
+            "landing.html",
+            has_result=get_result() is not None,
+            allowed_extensions=sorted(ALLOWED_EXTENSIONS),
+        )
 
+    @app.route("/results")
+    def results():
+        """Render the latest run, or send the user to set one up."""
+        current = get_result()
+        if current is None:
+            return redirect(url_for("setup"))
+        return render_template("results.html", active="results", has_result=True, view=_results_view(current))
+
+    @app.route("/setup")
+    def setup():
+        """Render the run configuration page."""
         sample_dataset = SAMPLE_DATASET_FILENAME if ensure_sample_dataset(upload_path) else None
         return render_template(
             "setup.html",
             active="setup",
-            has_result=has_result,
+            has_result=get_result() is not None,
             settings=get_settings(),
             defaults=DEFAULT_DASHBOARD_SETTINGS,
             allowed_extensions=sorted(ALLOWED_EXTENSIONS),
@@ -775,7 +787,7 @@ def create_app(result: Optional[AutoMLResult] = None, upload_dir: Optional[str |
             "best_result": best_summary,
             "constraints_met": result_obj.constraints_met,
             "notes": result_obj.notes,
-            "redirect": "/?view=dashboard",
+            "redirect": "/results",
         }
         return jsonify(response), 200
 
@@ -1053,8 +1065,8 @@ def run_dashboard(result: Optional[AutoMLResult] = None, host: str = "127.0.0.1"
     app = create_app(result)
     print(f"\n{'=' * 60}")
     print("🚀 Starting AutoML Decision Dashboard")
-    print(f"📋 Launchpad: http://{host}:{port}/")
-    print(f"📊 Results:  http://{host}:{port}/?view=dashboard")
+    print(f"📋 Home:     http://{host}:{port}/")
+    print(f"📊 Results:  http://{host}:{port}/results")
     print("⏹️  Press Ctrl+C to stop the server")
     print(f"{'=' * 60}\n")
     app.run(host=host, port=port, debug=debug, use_reloader=False)

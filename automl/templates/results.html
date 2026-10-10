@@ -40,7 +40,7 @@
             weighed against what each model cost to train.
         </p>
     </div>
-    <a class="btn btn-outline" href="/">
+    <a class="btn btn-outline" href="/setup">
         <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
         New run
     </a>
@@ -72,7 +72,7 @@
     <div class="notice is-error reveal" style="--i:2" role="alert">
         <p class="notice-title">No candidate met every limit</p>
         <p>Showing the closest one, {{ s.label }} ({{ s.violations | map(attribute='details') | join('; ') }}).
-            Loosen the constraints on the <a href="/">setup page</a> to get a model that meets them.</p>
+            Loosen the constraints on the <a href="/setup">setup page</a> to get a model that meets them.</p>
     </div>
     {% endif %}
 
@@ -170,7 +170,7 @@
         <p class="notice-title">No candidate met every limit</p>
         {% if view.closest %}
         <p>The highest-ranked candidate was {{ view.closest.label }} ({{ view.closest.violations | map(attribute='details') | join('; ') }}).
-            Loosen the constraints on the <a href="/">setup page</a> and run again.</p>
+            Loosen the constraints on the <a href="/setup">setup page</a> and run again.</p>
         {% else %}
         <p>No candidates were evaluated.</p>
         {% endif %}

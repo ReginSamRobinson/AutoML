@@ -1,0 +1,358 @@
+{% extends "base.html" %}
+{% block title %}AutoML · Resource-aware model search{% endblock %}
+
+{% block head %}
+<meta name="description" content="Upload a table, set limits on training time, memory and accuracy, and get a ranked shortlist of models that respects them.">
+<link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}">
+{% endblock %}
+
+{% macro arrow() -%}
+<svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg>
+{%- endmacro %}
+
+{% macro check() -%}
+<svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>
+{%- endmacro %}
+
+{% block body %}
+<a class="lp-skip" href="#main">Skip to content</a>
+
+<header class="lp-nav" id="lpNav">
+    <div class="lp-wrap lp-nav-inner">
+        <a class="brand" href="/" aria-label="AutoML home">
+            <span class="brand-text">
+                <span class="brand-name">AutoML</span>
+                <span class="brand-tag">resource-aware search</span>
+            </span>
+        </a>
+
+        <nav class="lp-links" aria-label="Sections">
+            <a href="#how">How it works</a>
+            <a href="#features">Capabilities</a>
+            <a href="#scoring">Scoring</a>
+            <a href="#models">Models</a>
+        </nav>
+
+        <div class="lp-nav-actions">
+            <div class="seg lp-seg" role="group" aria-label="Appearance">
+                <button type="button" data-theme-set="system" aria-pressed="false" title="Match system">Auto</button>
+                <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
+                <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+            </div>
+            {% if has_result %}
+            <a class="btn btn-ghost lp-hide-sm" href="/results">Results</a>
+            {% endif %}
+            <a class="btn btn-primary" href="/setup">Start a run</a>
+        </div>
+    </div>
+</header>
+
+<main id="main">
+    <!-- Hero -->
+    <section class="lp-hero">
+        <div class="lp-wrap lp-hero-grid">
+            <div class="lp-hero-copy">
+                <p class="lp-pill reveal"><span class="pulse" aria-hidden="true"></span>Resource-aware AutoML · runs locally</p>
+                <h1 class="lp-title reveal" style="--i:1">The best model your <span class="lp-hl">budget</span> can afford.</h1>
+                <p class="lp-lead reveal" style="--i:2">
+                    Upload a table, cap training time, memory and the score you need, and get a ranked
+                    shortlist of models that respects those limits. Every number is measured, not guessed.
+                </p>
+                <div class="lp-cta reveal" style="--i:3">
+                    <a class="btn btn-primary btn-lg" href="/setup">Start a run {{ arrow() }}</a>
+                    {% if has_result %}
+                    <a class="btn btn-outline btn-lg" href="/results">Open latest results</a>
+                    {% else %}
+                    <a class="btn btn-outline btn-lg" href="#how">See how it works</a>
+                    {% endif %}
+                </div>
+                <ul class="lp-meta reveal" style="--i:4" aria-label="At a glance">
+                    <li>{{ check() }}No code required</li>
+                    <li>{{ check() }}Sample dataset included</li>
+                    <li>{{ check() }}Data stays on your machine</li>
+                </ul>
+            </div>
+
+            <!-- Product preview: an illustrative run, not live data -->
+            <figure class="lp-console reveal" style="--i:2" aria-label="Example of a finished run">
+                <div class="lp-console-bar">
+                    <span class="lp-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                    <span class="mono lp-console-name">example run · sample_breast_cancer.csv</span>
+                    <span class="lp-state">complete</span>
+                </div>
+
+                <dl class="lp-specs mono">
+                    <div><dt>rank by</dt><dd>accuracy</dd></div>
+                    <div><dt>time cap</dt><dd>60 s</dd></div>
+                    <div><dt>memory cap</dt><dd>4096 MB</dd></div>
+                    <div><dt>threshold</dt><dd>≥ 0.85</dd></div>
+                </dl>
+
+                <div class="lp-plot">
+                    <svg viewBox="0 0 320 150" role="img" aria-label="Accuracy plotted against training time; the selected model is both fast and accurate">
+                        <g class="lp-grid">
+                            <line x1="30" y1="30" x2="310" y2="30"/>
+                            <line x1="30" y1="72" x2="310" y2="72"/>
+                            <line x1="30" y1="114" x2="310" y2="114"/>
+                        </g>
+                        <line class="lp-axis" x1="30" y1="134" x2="310" y2="134"/>
+                        <line class="lp-cap" x1="278" y1="12" x2="278" y2="134"/>
+                        <text class="lp-cap-label" x="274" y="20" text-anchor="end">60 s cap</text>
+                        <g class="lp-pts">
+                            <circle cx="77.7" cy="48.2" r="4"/>
+                            <circle cx="95.3" cy="58.4" r="4"/>
+                            <circle cx="132" cy="91.7" r="4"/>
+                            <circle cx="149" cy="84" r="4"/>
+                            <circle cx="166" cy="101.9" r="4"/>
+                            <circle cx="199" cy="73.8" r="4"/>
+                            <circle cx="214.6" cy="86.6" r="4"/>
+                            <circle cx="234" cy="107" r="4"/>
+                            <circle class="lp-pt-bad" cx="292" cy="76.3" r="4"/>
+                        </g>
+                        <circle class="lp-pt-halo" cx="60" cy="30.3" r="11"/>
+                        <circle class="lp-pt-sel" cx="60" cy="30.3" r="5"/>
+                        <text class="lp-pt-label" x="74" y="27">Logistic regression</text>
+                        <text class="lp-tick" x="30" y="147">0.2 s</text>
+                        <text class="lp-tick" x="310" y="147" text-anchor="end">100 s</text>
+                        <text class="lp-tick" x="26" y="33" text-anchor="end">.98</text>
+                        <text class="lp-tick" x="26" y="117" text-anchor="end">.95</text>
+                    </svg>
+                </div>
+
+                <table class="lp-board">
+                    <caption class="sr-only">Example leaderboard</caption>
+                    <thead>
+                        <tr><th scope="col">#</th><th scope="col">Model</th><th scope="col" class="num">Acc.</th><th scope="col">Time</th><th scope="col"><span class="sr-only">Status</span></th></tr>
+                    </thead>
+                    <tbody>
+                        <tr class="is-sel">
+                            <td class="num">01</td><td>Logistic regression</td><td class="num">0.979</td>
+                            <td><span class="lp-bar" style="--w:6%"></span><span class="num">0.4 s</span></td>
+                            <td><span class="lp-ok">{{ check() }}</span></td>
+                        </tr>
+                        <tr>
+                            <td class="num">02</td><td>Gradient boosting</td><td class="num">0.962</td>
+                            <td><span class="lp-bar" style="--w:42%"></span><span class="num">9.8 s</span></td>
+                            <td><span class="lp-ok">{{ check() }}</span></td>
+                        </tr>
+                        <tr>
+                            <td class="num">03</td><td>Random forest</td><td class="num">0.958</td>
+                            <td><span class="lp-bar" style="--w:26%"></span><span class="num">3.1 s</span></td>
+                            <td><span class="lp-ok">{{ check() }}</span></td>
+                        </tr>
+                        <tr class="is-bad">
+                            <td class="num">04</td><td>Random forest</td><td class="num">0.961</td>
+                            <td><span class="lp-bar" style="--w:100%"></span><span class="num">71 s</span></td>
+                            <td><span class="lp-flag">Time limit</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <figcaption class="lp-callout">
+                    <span class="lp-callout-k mono">selected</span>
+                    <span><strong>24× faster</strong> than the runner-up for 1.7 points more accuracy</span>
+                </figcaption>
+            </figure>
+        </div>
+    </section>
+
+    <!-- Facts strip -->
+    <section class="lp-wrap" aria-label="At a glance">
+        <dl class="lp-stats lp-in">
+            <div><dt>Model families</dt><dd>5</dd><span>linear, forests, boosting</span></div>
+            <div><dt>Metrics</dt><dd>11</dd><span>6 classification · 5 regression</span></div>
+            <div><dt>Resources tracked</dt><dd>3</dd><span>time · peak memory · CPU</span></div>
+            <div><dt>File formats</dt><dd>{{ allowed_extensions | length }}</dd><span class="mono">{{ allowed_extensions | join(' · ') }}</span></div>
+        </dl>
+    </section>
+
+    <!-- How it works -->
+    <section class="lp-section" id="how" aria-labelledby="howHeading">
+        <div class="lp-wrap">
+            <header class="lp-head lp-in">
+                <p class="lp-kicker mono">Workflow</p>
+                <h2 id="howHeading">From spreadsheet to shortlist in three steps</h2>
+                <p>No pipelines to write. Bring the data, say what you can spend, and compare what comes back.</p>
+            </header>
+            <ol class="lp-steps">
+                <li class="lp-step lp-in">
+                    <span class="lp-step-no mono">01</span>
+                    <h3>Bring a table</h3>
+                    <p>CSV, Excel, JSON or Parquet. Pick the column to predict; classification or regression is detected for you.</p>
+                    <div class="lp-step-art mono" aria-hidden="true">
+                        <span class="lp-file"><b>csv</b>churn_2024.csv</span>
+                        <span class="lp-arrow">→</span>
+                        <span class="lp-tagline">target: <em>churned</em></span>
+                    </div>
+                </li>
+                <li class="lp-step lp-in" style="--d:1">
+                    <span class="lp-step-no mono">02</span>
+                    <h3>Set the budget</h3>
+                    <p>Cap time per candidate and extra memory, set the score a model must reach, and choose the metric that ranks them.</p>
+                    <div class="lp-step-art mono" aria-hidden="true">
+                        <span class="lp-chip">time ≤ 60 s</span>
+                        <span class="lp-chip">mem ≤ 4 GB</span>
+                        <span class="lp-chip is-on">f1 ≥ 0.80</span>
+                    </div>
+                </li>
+                <li class="lp-step lp-in" style="--d:2">
+                    <span class="lp-step-no mono">03</span>
+                    <h3>Pick with evidence</h3>
+                    <p>Every candidate is cross-validated and measured. See quality against cost, head to head, and keep the one that fits.</p>
+                    <div class="lp-step-art mono" aria-hidden="true">
+                        <span class="lp-rank"><b>#1</b> elastic net</span>
+                        <span class="lp-delta">+0.4% · 12× faster</span>
+                    </div>
+                </li>
+            </ol>
+        </div>
+    </section>
+
+    <!-- Capabilities -->
+    <section class="lp-section" id="features" aria-labelledby="featHeading">
+        <div class="lp-wrap">
+            <header class="lp-head lp-in">
+                <p class="lp-kicker mono">Capabilities</p>
+                <h2 id="featHeading">Built for the limits you actually have</h2>
+                <p>Most AutoML tools chase the leaderboard. This one also answers whether the winner fits your hardware and your deadline.</p>
+            </header>
+
+            <div class="lp-bento">
+                <article class="lp-card lp-card-wide lp-in">
+                    <div class="lp-card-copy">
+                        <h3>Constraints are first-class</h3>
+                        <p>Time, memory and minimum score are checked for every candidate. Anything that breaks a limit is flagged with the reason, never silently ranked.</p>
+                    </div>
+                    <div class="lp-meters" aria-hidden="true">
+                        <div class="lp-meter"><span class="mono">time</span><span class="lp-track"><span style="--w:8%"></span></span><span class="mono">0.4 / 60 s</span></div>
+                        <div class="lp-meter"><span class="mono">memory</span><span class="lp-track"><span style="--w:12%"></span></span><span class="mono">18 / 4096 MB</span></div>
+                        <div class="lp-meter is-hot"><span class="mono">accuracy</span><span class="lp-track"><span style="--w:92%"></span></span><span class="mono">0.979 ≥ 0.85</span></div>
+                    </div>
+                </article>
+
+                <article class="lp-card lp-in" style="--d:1">
+                    <span class="lp-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="8"/></svg></span>
+                    <h3>Measured, not estimated</h3>
+                    <p>Training time, peak memory above baseline and CPU are sampled while each candidate trains.</p>
+                </article>
+
+                <article class="lp-card lp-in" style="--d:2">
+                    <span class="lp-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h6"/><path d="m16 16 2 2 4-4"/></svg></span>
+                    <h3>Copes with messy tables</h3>
+                    <ul class="lp-tags mono">
+                        <li>row IDs dropped</li>
+                        <li>dates → year · month · day</li>
+                        <li>missing values imputed</li>
+                        <li>latin-1 · semicolon CSVs</li>
+                    </ul>
+                </article>
+
+                <article class="lp-card lp-in" style="--d:1">
+                    <span class="lp-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 19V9M12 19V5M19 19v-7"/></svg></span>
+                    <h3>Classification or regression</h3>
+                    <p>Detected from the target column, with a one-click override when numeric labels look like values.</p>
+                </article>
+
+                <article class="lp-card lp-in" style="--d:2">
+                    <span class="lp-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg></span>
+                    <h3>Interpretable-only mode</h3>
+                    <p>Restrict the search to linear models whose coefficients you can read and explain.</p>
+                </article>
+
+                <article class="lp-card lp-card-row lp-in">
+                    <span class="lp-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span>
+                    <div>
+                        <h3>Stays on your machine</h3>
+                        <p>The dashboard is a local server. Datasets, settings and results never leave your computer.</p>
+                    </div>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <!-- Scoring -->
+    <section class="lp-section" id="scoring" aria-labelledby="scoreHeading">
+        <div class="lp-wrap lp-split">
+            <div class="lp-head lp-in">
+                <p class="lp-kicker mono">Scoring</p>
+                <h2 id="scoreHeading">One score for quality and cost</h2>
+                <p>Candidates are ranked on a single, published formula. When two models are close on accuracy, the cheaper one wins, and every term is visible in the leaderboard.</p>
+                <code class="lp-formula mono">score = 0.7 · quality − 0.3 · cost − 0.1 · violations</code>
+            </div>
+
+            <div class="lp-weights lp-in" style="--d:1">
+                <div class="lp-weight-row">
+                    <span>Quality</span>
+                    <span class="lp-weight-bar is-accent"><span style="--w:70%"></span></span>
+                    <span class="mono">70%</span>
+                </div>
+                <div class="lp-weight-row">
+                    <span>Cost</span>
+                    <span class="lp-weight-bar"><span style="--w:30%"></span></span>
+                    <span class="mono">30%</span>
+                </div>
+                <div class="lp-cost-split" aria-label="How cost is made up">
+                    <span style="--w:50%"><b>time</b> 50%</span>
+                    <span style="--w:30%"><b>memory</b> 30%</span>
+                    <span style="--w:20%"><b>cpu</b> 20%</span>
+                </div>
+                <p class="lp-note">Quality and each cost are scaled 0–1 within the run. Each broken limit costs another 0.1.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Models -->
+    <section class="lp-section" id="models" aria-labelledby="modelsHeading">
+        <div class="lp-wrap">
+            <header class="lp-head lp-in">
+                <p class="lp-kicker mono">Search space</p>
+                <h2 id="modelsHeading">Proven model families, tuned for you</h2>
+                <p>Each family is searched over its hyperparameters, with the search narrowed automatically when your time or memory budget is tight.</p>
+            </header>
+            <ul class="lp-models">
+                <li class="lp-in"><span class="fam-glyph">LR</span><div><b>Logistic regression</b><span>classification · interpretable</span></div></li>
+                <li class="lp-in" style="--d:1"><span class="fam-glyph">EN</span><div><b>Elastic net</b><span>regression · interpretable</span></div></li>
+                <li class="lp-in" style="--d:2"><span class="fam-glyph">RF</span><div><b>Random forest</b><span>classification · regression</span></div></li>
+                <li class="lp-in" style="--d:3"><span class="fam-glyph">GB</span><div><b>Gradient boosting</b><span>classification · regression</span></div></li>
+                <li class="lp-in" style="--d:4"><span class="fam-glyph">XG</span><div><b>XGBoost</b><span>both · when installed</span></div></li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- Closing call to action -->
+    <section class="lp-wrap">
+        <div class="lp-final lp-in">
+            <div>
+                <h2>Ready when your data is.</h2>
+                <p>Start with the bundled breast-cancer sample, or drop in your own table.</p>
+            </div>
+            <div class="lp-cta">
+                <a class="btn btn-primary btn-lg" href="/setup">Start a run {{ arrow() }}</a>
+                {% if has_result %}
+                <a class="btn btn-outline btn-lg" href="/results">Latest results</a>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer class="lp-footer">
+    <div class="lp-wrap lp-footer-inner">
+        <a class="brand" href="/" aria-label="AutoML home">
+            <span class="brand-text">
+                <span class="brand-name">AutoML</span>
+                <span class="brand-tag">resource-aware search · MIT licensed</span>
+            </span>
+        </a>
+        <nav class="lp-footer-links" aria-label="Footer">
+            <a href="/setup">Configure</a>
+            {% if has_result %}<a href="/results">Results</a>{% endif %}
+            <a href="https://github.com/ReginSamRobinson/AutoML" rel="noopener">Source</a>
+        </nav>
+    </div>
+</footer>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='landing.js') }}"></script>
+{% endblock %}
