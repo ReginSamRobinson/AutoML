@@ -26,6 +26,8 @@
             surface: token("--surface"),
             border: token("--border-strong"),
             font: token("--font"),
+            display: token("--display"),
+            mono: token("--mono"),
         };
     }
 
@@ -34,7 +36,7 @@
             gridcolor: t.grid,
             linecolor: t.border,
             zeroline: false,
-            tickfont: { size: 11, color: t.text },
+            tickfont: { family: t.mono, size: 11, color: t.text },
             title: { font: { size: 12, color: t.text } },
             automargin: true,
         }, extra || {});
@@ -91,6 +93,16 @@
                 type: "scatter",
                 mode: "markers",
                 name: "Selected",
+                showlegend: false,
+                hoverinfo: "skip",
+                x: [selected.time],
+                y: [selected.metrics[primary.key]],
+                marker: { size: 30, color: t.accent, opacity: 0.18, line: { width: 0 } },
+            });
+            traces.push({
+                type: "scatter",
+                mode: "markers",
+                name: "Selected",
                 x: [selected.time],
                 y: [selected.metrics[primary.key]],
                 text: [hoverText(selected)],
@@ -100,9 +112,9 @@
             annotations.push({
                 x: selected.time, y: selected.metrics[primary.key],
                 xref: "x", yref: "y",
-                text: selected.label, showarrow: false,
-                xanchor: "left", xshift: 10,
-                font: { size: 12, color: t.strong },
+                text: "<b>" + selected.label + "</b>", showarrow: false,
+                xanchor: "left", xshift: 16,
+                font: { family: t.display, size: 13, color: t.strong },
             });
         }
 
@@ -137,7 +149,7 @@
         const layout = Object.assign(baseLayout(t), {
             margin: { l: 8, r: 16, t: 36, b: 28 },
             bargap: 0.55,
-            yaxis: axis(t, { autorange: "reversed", gridcolor: "rgba(0,0,0,0)", ticks: "", tickfont: { size: 12, color: t.strong } }),
+            yaxis: axis(t, { autorange: "reversed", gridcolor: "rgba(0,0,0,0)", ticks: "", tickfont: { family: t.font, size: 12, color: t.strong } }),
             annotations: [],
         });
 
@@ -165,7 +177,7 @@
                 y: labels,
                 xaxis: "x" + suffix,
                 yaxis: "y",
-                marker: { color: colors, cornerradius: 3 },
+                marker: { color: colors, cornerradius: 4 },
                 text: values.map((v) => fmt(v, panel.digits)),
                 textposition: "outside",
                 cliponaxis: false,
