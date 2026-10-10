@@ -1,39 +1,43 @@
-// Theme switch: system, light or dark, remembered across visits.
+// Theme switch: a single light/dark toggle, remembered across visits.
+// Until the user picks one, the page follows the system setting.
 (function () {
     const KEY = "automl-theme";
-    const buttons = Array.from(document.querySelectorAll("[data-theme-set]"));
+    const root = document.documentElement;
+    const buttons = Array.from(document.querySelectorAll("[data-theme-toggle]"));
+    const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 
-    function read() {
+    function saved() {
         try {
-            return localStorage.getItem(KEY) || "system";
+            const value = localStorage.getItem(KEY);
+            return value === "light" || value === "dark" ? value : null;
         } catch (e) {
-            return "system";
+            return null;
         }
     }
 
     function apply(theme) {
-        if (theme === "system") {
-            document.documentElement.removeAttribute("data-theme");
-        } else {
-            document.documentElement.setAttribute("data-theme", theme);
-        }
-        buttons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.themeSet === theme)));
+        root.setAttribute("data-theme", theme);
+        const label = theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
+        buttons.forEach((button) => {
+            button.setAttribute("aria-label", label);
+            button.title = label;
+        });
         document.dispatchEvent(new CustomEvent("themechange"));
     }
 
-    apply(read());
+    apply(saved() || (systemDark.matches ? "dark" : "light"));
 
     buttons.forEach((button) =>
         button.addEventListener("click", function () {
-            const theme = button.dataset.themeSet;
+            const next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
             try {
-                localStorage.setItem(KEY, theme);
+                localStorage.setItem(KEY, next);
             } catch (e) {}
-            apply(theme);
+            apply(next);
         })
     );
 
-    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
-        document.dispatchEvent(new CustomEvent("themechange"));
+    systemDark.addEventListener("change", function (event) {
+        if (!saved()) apply(event.matches ? "dark" : "light");
     });
 })();

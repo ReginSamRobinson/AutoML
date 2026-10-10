@@ -97,10 +97,6 @@ body {
     gap: 10px;
 }
 
-.lp-seg {
-    width: 168px;
-}
-
 /* ========== Hero ========== */
 
 .lp-hero {
@@ -1112,8 +1108,7 @@ body {
         padding: 0 16px;
     }
 
-    .lp-nav .brand-tag,
-    .lp-seg {
+    .lp-nav .brand-tag {
         display: none;
     }
 

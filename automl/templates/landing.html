@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import theme_toggle %}
 {% block title %}AutoML · Resource-aware model search{% endblock %}
 
 {% block head %}
@@ -34,11 +35,7 @@
         </nav>
 
         <div class="lp-nav-actions">
-            <div class="seg lp-seg" role="group" aria-label="Appearance">
-                <button type="button" data-theme-set="system" aria-pressed="false" title="Match system">Auto</button>
-                <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
-                <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
-            </div>
+            {{ theme_toggle() }}
             {% if has_result %}
             <a class="btn btn-ghost lp-hide-sm" href="/results">Results</a>
             {% endif %}

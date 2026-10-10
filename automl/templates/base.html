@@ -1,4 +1,5 @@
 <!doctype html>
+{% from "_macros.html" import theme_toggle %}
 <html lang="en">
 <head>
     <meta charset="utf-8">
@@ -7,9 +8,10 @@
     <script>
         try {
             var savedTheme = localStorage.getItem("automl-theme");
-            if (savedTheme === "light" || savedTheme === "dark") {
-                document.documentElement.setAttribute("data-theme", savedTheme);
+            if (savedTheme !== "light" && savedTheme !== "dark") {
+                savedTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
             }
+            document.documentElement.setAttribute("data-theme", savedTheme);
         } catch (e) {}
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -47,11 +49,9 @@
         </nav>
 
         <div class="rail-foot">
-            <p class="rail-label" id="themeLabel">Appearance</p>
-            <div class="seg" role="group" aria-labelledby="themeLabel" id="themeSwitch">
-                <button type="button" data-theme-set="system" aria-pressed="false">Auto</button>
-                <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
-                <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+            <div class="rail-theme">
+                <span class="rail-label">Appearance</span>
+                {{ theme_toggle() }}
             </div>
             <p class="rail-meta mono">time · memory · cpu</p>
         </div>
