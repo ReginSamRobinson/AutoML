@@ -34,9 +34,29 @@ if HAS_XGB:
 
         def fit(self, X, y, **kwargs):
             self._label_encoder = LabelEncoder().fit(y)
+            self._decoded_classes = None  # XGBoost's own fit must see the encoded 0..n-1 classes
             super().fit(X, self._label_encoder.transform(y), **kwargs)
-            self.classes_ = self._label_encoder.classes_
+            self._decoded_classes = self._label_encoder.classes_
             return self
+
+        # XGBoost >= 2 exposes classes_ as a read-only property returning 0..n-1,
+        # while older versions assign it in fit; once fitted, report the original labels.
+        @property
+        def classes_(self):
+            decoded = getattr(self, "_decoded_classes", None)
+            if decoded is not None:
+                return decoded
+            parent = getattr(XGBClassifier, "classes_", None)
+            if isinstance(parent, property):
+                return parent.fget(self)
+            try:
+                return self.__dict__["_xgb_classes"]
+            except KeyError:
+                raise AttributeError("classes_") from None
+
+        @classes_.setter
+        def classes_(self, value):
+            self.__dict__["_xgb_classes"] = value
 
         def predict(self, X, **kwargs):
             encoded = np.asarray(super().predict(X, **kwargs)).astype(int)
